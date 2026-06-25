@@ -1,0 +1,245 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: polyprov-config
+data:
+  REDIS_URL: "redis://redis:6379/0"
+  PROVISIONING_BASE_PATH: "/provisioning/"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: polyprov-secrets
+type: Opaque
+stringData:
+  # In production, source these from your secret manager (External Secrets, etc.)
+  DATABASE_URL: "postgresql+asyncpg://polyprov:polyprov@postgres:5432/polyprov"
+  DATABASE_URL_SYNC: "postgresql+psycopg2://polyprov:polyprov@postgres:5432/polyprov"
+  SECRET_KEY: "REPLACE_ME_FROM_SECRET_MANAGER"
+---
+# ----- Provisioning plane: scaled high, handles the phone fleet -----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prov-api
+  labels: {app: prov-api, plane: provisioning}
+spec:
+  replicas: 4
+  selector:
+    matchLabels: {app: prov-api}
+  template:
+    metadata:
+      labels: {app: prov-api, plane: provisioning}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels: {app: prov-api}
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: prov-api
+          image: polyprov:latest
+          args: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - name: POLYPROV_PLANE
+              value: "provisioning"
+          envFrom:
+            - configMapRef: {name: polyprov-config}
+            - secretRef: {name: polyprov-secrets}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: {cpu: "250m", memory: "256Mi"}
+            limits: {cpu: "1", memory: "512Mi"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prov-api
+spec:
+  selector: {app: prov-api}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: prov-api-hpa
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: prov-api}
+  minReplicas: 4
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 65}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: prov-api-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: {app: prov-api}
+---
+# ----- Admin plane: small, separate from phone traffic -----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-api
+  labels: {app: admin-api, plane: admin}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: admin-api}
+  template:
+    metadata:
+      labels: {app: admin-api, plane: admin}
+    spec:
+      containers:
+        - name: admin-api
+          image: polyprov:latest
+          args: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - name: POLYPROV_PLANE
+              value: "admin"
+          envFrom:
+            - configMapRef: {name: polyprov-config}
+            - secretRef: {name: polyprov-secrets}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8000}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8000}
+          resources:
+            requests: {cpu: "100m", memory: "256Mi"}
+            limits: {cpu: "500m", memory: "512Mi"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-api
+spec:
+  selector: {app: admin-api}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+# ----- Background workers -----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: celery-worker}
+  template:
+    metadata:
+      labels: {app: celery-worker}
+    spec:
+      containers:
+        - name: worker
+          image: polyprov:latest
+          args: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+          envFrom:
+            - configMapRef: {name: polyprov-config}
+            - secretRef: {name: polyprov-secrets}
+          resources:
+            requests: {cpu: "100m", memory: "256Mi"}
+            limits: {cpu: "500m", memory: "512Mi"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: celery-beat}
+  template:
+    metadata:
+      labels: {app: celery-beat}
+    spec:
+      containers:
+        - name: beat
+          image: polyprov:latest
+          args: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+          envFrom:
+            - configMapRef: {name: polyprov-config}
+            - secretRef: {name: polyprov-secrets}
+---
+# ----- Admin Web UI -----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  labels: {app: ui, plane: admin}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: ui}
+  template:
+    metadata:
+      labels: {app: ui, plane: admin}
+    spec:
+      containers:
+        - name: ui
+          image: polyprov-ui:latest
+          ports: [{containerPort: 80}]
+          readinessProbe:
+            httpGet: {path: /, port: 80}
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: {path: /, port: 80}
+            initialDelaySeconds: 5
+          resources:
+            requests: {cpu: "50m", memory: "64Mi"}
+            limits: {cpu: "200m", memory: "128Mi"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+spec:
+  selector: {app: ui}
+  ports: [{port: 80, targetPort: 80}]
+---
+# Ingress routing UI + admin API on one host. The UI image proxies /api itself,
+# but in K8s we route at the ingress so the UI pod stays a pure static server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: polyprov-console
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+    - host: console.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: {service: {name: admin-api, port: {number: 8000}}}
+          - path: /healthz
+            pathType: Exact
+            backend: {service: {name: admin-api, port: {number: 8000}}}
+          - path: /readyz
+            pathType: Exact
+            backend: {service: {name: admin-api, port: {number: 8000}}}
+          - path: /metrics
+            pathType: Exact
+            backend: {service: {name: admin-api, port: {number: 8000}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: ui, port: {number: 80}}}

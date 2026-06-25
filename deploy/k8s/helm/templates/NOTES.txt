@@ -1,0 +1,9 @@
+PolyProv installed.
+
+Provisioning plane:  service prov-api:8000  (scale via HPA {{ .Values.provApi.minReplicas }}-{{ .Values.provApi.maxReplicas }})
+Admin plane:         service admin-api:8000
+
+Next:
+  1. Point DHCP option 160/161 at your provisioning ingress.
+  2. Run the seed job to create the first admin user.
+  3. Import devices via POST /api/v1/devices/import.

@@ -1,0 +1,51 @@
+image:
+  repository: polyprov
+  tag: latest
+  pullPolicy: IfNotPresent
+
+provApi:
+  replicas: 4
+  minReplicas: 4
+  maxReplicas: 30
+  targetCPUUtilizationPercentage: 65
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {cpu: "1", memory: 512Mi}
+
+adminApi:
+  replicas: 2
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+worker:
+  replicas: 2
+
+config:
+  redisUrl: "redis://redis:6379/0"
+  provisioningBasePath: "/provisioning/"
+
+# Source these from a secret manager in real deployments.
+secrets:
+  databaseUrl: "postgresql+asyncpg://polyprov:polyprov@postgres:5432/polyprov"
+  databaseUrlSync: "postgresql+psycopg2://polyprov:polyprov@postgres:5432/polyprov"
+  secretKey: "REPLACE_ME"
+
+postgres:
+  # Point at managed Postgres (primary + read replicas) in production.
+  external: true
+  host: postgres
+
+redis:
+  external: true
+  host: redis
+
+ui:
+  replicas: 2
+  image:
+    repository: polyprov-ui
+    tag: latest
+  host: console.example.com
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}

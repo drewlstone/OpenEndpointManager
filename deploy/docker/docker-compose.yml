@@ -1,0 +1,119 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: polyprov
+      POSTGRES_PASSWORD: polyprov
+      POSTGRES_DB: polyprov
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polyprov"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible object store for firmware (dev only)
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - miniodata:/data
+
+  admin-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      POLYPROV_PLANE: admin
+      DATABASE_URL: postgresql+asyncpg://polyprov:polyprov@db:5432/polyprov
+      DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-secret-not-for-production
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  prov-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      POLYPROV_PLANE: provisioning
+      DATABASE_URL: postgresql+asyncpg://polyprov:polyprov@db:5432/polyprov
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-secret-not-for-production
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    deploy:
+      replicas: 2  # demonstrate multiple prov nodes behind the LB
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+
+  beat:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis: {condition: service_healthy}
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"   # provisioning plane
+      - "8081:80"   # admin plane (use Host header or separate port mapping)
+    volumes:
+      - ../../nginx/provisioning.conf:/etc/nginx/conf.d/provisioning.conf:ro
+      - ../../nginx/admin.conf:/etc/nginx/conf.d/admin.conf:ro
+      - ../../provisioning_root:/data/provisioning_root:ro
+    depends_on:
+      - admin-api
+      - prov-api
+
+  ui:
+    build:
+      context: ../../ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"   # Admin web UI -> http://localhost:3000
+    depends_on:
+      - admin-api
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

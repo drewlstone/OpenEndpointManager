@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TenantCreate(BaseModel):
+    slug: str
+    name: str
+
+
+class TenantOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    slug: str
+    name: str
+    status: str
+
+
+class SiteCreate(BaseModel):
+    tenant_id: int
+    name: str
+    region: str | None = None
+    timezone: str = "UTC"
+
+
+class SiteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    tenant_id: int
+    name: str
+    region: str | None
+    timezone: str
+
+
+class GroupCreate(BaseModel):
+    tenant_id: int
+    name: str
+    kind: str = "service_profile"
+    site_id: int | None = None
+    parent_group_id: int | None = None
+    priority: int = 100
+
+
+class GroupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    tenant_id: int
+    name: str
+    kind: str
+    priority: int
+
+
+class DeviceCreate(BaseModel):
+    tenant_id: int
+    mac: str
+    model: str = "CCX"
+    site_id: int | None = None
+    primary_group_id: int | None = None
+    serial: str | None = None
+    label: str | None = None
+
+
+class DeviceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    tenant_id: int
+    mac: str
+    model: str
+    site_id: int | None
+    status: str
+    label: str | None
+    last_seen_at: datetime | None
+
+
+class DeviceImportResult(BaseModel):
+    total: int
+    created: int
+    updated: int
+    errors: list[dict]
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    scope: str
+    scope_ref: str | None = None
+    tenant_id: int | None = None
+    parent_id: int | None = None
+    body: dict = Field(default_factory=dict)
+    priority: int = 100
+
+
+class TemplateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    scope: str
+    scope_ref: str | None
+    priority: int
+    body: dict
+
+
+class FirmwareOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    model: str
+    version: str
+    sha256: str
+    size_bytes: int
+
+
+class FirmwareAssignmentCreate(BaseModel):
+    scope: str = "model"
+    scope_ref: str
+    firmware_image_id: int
+    ring: str = "test"
+    window_id: int | None = None
+
+
+class ApiKeyCreate(BaseModel):
+    name: str
+    tenant_id: int | None = None
+    scopes: list[str] = Field(default_factory=list)
+
+
+class ApiKeyCreated(BaseModel):
+    id: int
+    name: str
+    api_key: str
+    prefix: str
