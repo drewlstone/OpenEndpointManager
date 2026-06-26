@@ -37,6 +37,38 @@ def test_login_and_create_device():
 
 
 @REQUIRES_STACK
+def test_global_master_config_returns_without_pseudo_device():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    r = client.get("/provisioning/000000000000.cfg")
+    assert r.status_code == 200
+    assert "<APPLICATION" in r.text
+    assert "CONFIG_FILES=" in r.text
+    assert "device not enrolled" not in r.text
+
+
+@REQUIRES_STACK
+def test_global_master_config_second_request_uses_cache(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.provisioning import router as prov_router
+
+    client = TestClient(app)
+    first = client.get("/provisioning/000000000000.cfg")
+    assert first.status_code == 200
+
+    def fail_render(*args, **kwargs):
+        raise AssertionError("global master was rendered instead of served from cache")
+
+    monkeypatch.setattr(prov_router, "render_master_config", fail_render)
+    second = client.get("/provisioning/000000000000.cfg")
+    assert second.status_code == 200
+    assert second.text == first.text
+
+
+@REQUIRES_STACK
 def test_provisioning_returns_config_for_enrolled_device():
     from fastapi.testclient import TestClient
     from app.main import app

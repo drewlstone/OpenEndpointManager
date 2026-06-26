@@ -75,22 +75,49 @@ async def get_config(
     client_ip = request.client.host if request.client else None
     ua = request.headers.get("user-agent")
 
-    mac = _mac_from_filename(filename)
-    path_type = "master" if filename.startswith("000000000000") else "device"
+    is_global_master = filename == "000000000000.cfg"
+    mac = None if is_global_master else _mac_from_filename(filename)
+    path_type = "master" if is_global_master else "device"
 
-    # Rate limit (per-MAC if known, else per-IP)
-    rl_id = mac or client_ip or "unknown"
+    # Rate limit global master by IP; device configs prefer per-MAC limiting.
+    rl_id = (client_ip or "unknown") if is_global_master else (mac or client_ip or "unknown")
     if not await rate_limit_ok(rl_id, settings.rate_limit_per_minute):
         metrics.provisioning_requests.labels(path_type, "429", "n/a").inc()
         return PlainTextResponse("rate limited", status_code=429)
 
-    # Master/global config with no MAC -> serve global master listing
+    global_gen = await get_global_generation()
+
+    if is_global_master:
+        key = config_cache_key("global", "master", global_gen)
+        cached = await cache_get(key)
+        if cached is not None:
+            metrics.cache_hits.inc()
+            metrics.provisioning_requests.labels(path_type, "200", "hit").inc()
+            elapsed = time.perf_counter() - start
+            metrics.provisioning_latency.labels(path_type).observe(elapsed)
+            logger.info("prov hit", extra={"mac": None, "path": filename,
+                                            "cache_hit": True, "latency_ms": elapsed * 1000})
+            return PlainTextResponse(cached.decode(), media_type="text/xml")
+
+        metrics.cache_misses.inc()
+        render_start = time.perf_counter()
+        body = render_master_config("global", config_files=[])
+        metrics.config_render_duration.observe(time.perf_counter() - render_start)
+        await cache_set(key, body)
+
+        metrics.provisioning_requests.labels(path_type, "200", "miss").inc()
+        elapsed = time.perf_counter() - start
+        metrics.provisioning_latency.labels(path_type).observe(elapsed)
+        logger.info("prov miss", extra={"mac": None, "path": filename,
+                                         "cache_hit": False, "latency_ms": elapsed * 1000})
+        return PlainTextResponse(body.decode(), media_type="text/xml")
+
+    # Device config requests must contain a usable MAC address.
     if mac is None:
         metrics.provisioning_requests.labels(path_type, "404", "miss").inc()
         return PlainTextResponse("not found", status_code=404)
 
     # Cache key incorporates global + per-device generation for invalidation
-    global_gen = await get_global_generation()
     device_gen = await get_device_generation(mac)
     generation = global_gen * 1_000_000 + device_gen
 
