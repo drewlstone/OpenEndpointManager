@@ -137,13 +137,15 @@ seed as a module/runtime that has `/app` on `PYTHONPATH`.
 
 ### 6. Validate HTTP Health Through NGINX
 
-Use explicit Host headers. The Compose NGINX container currently routes by
-virtual host, not by host port alone.
+The Compose NGINX container preserves standard HTTP on container port `80` and
+routes by virtual host. The stock nginx image `default.conf` is overridden, so
+plain `localhost` falls through to the provisioning `default_server`. Use the
+admin Host header for admin-plane checks.
 
 Provisioning plane through NGINX:
 
 ```bash
-curl -fsS -H 'Host: prov.example.com' http://localhost:8080/healthz && echo
+curl -fsS http://localhost:8080/healthz && echo
 ```
 
 Expected result:
@@ -180,28 +182,14 @@ Observed result:
 
 - Passed.
 
-Failure indicator:
+Routing note:
 
-Plain localhost checks returned `404` in this lab:
-
-```bash
-curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8081/readyz
-```
-
-Cause:
-
-- The live NGINX config included the stock base-image
-`/etc/nginx/conf.d/default.conf` with `server_name localhost`.
-- Requests with `Host: localhost` matched that stock server instead of the
-PolyProv provisioning/admin vhosts.
-
-Technical debt:
-
-- **High:** the stock NGINX `default.conf` remains loaded in the Compose NGINX
-container. This can make localhost validation and appliance routing misleading
-unless Host headers are supplied. This should be fixed in a future deployment
-hardening milestone.
+The stock nginx image `default.conf` is intentionally overridden by the Compose
+stack so `Host: localhost` no longer matches the image's default static site.
+Because both host ports still enter the same NGINX listener on container port
+`80`, admin-plane requests must use the admin virtual host name. Plain
+`localhost:8081` is not a reliable admin-plane signal in the current
+single-NGINX Compose model.
 
 ### 7. Validate API Containers Directly
 
@@ -252,15 +240,14 @@ Observed result:
 
 ### 9. Validate Global Master Request
 
-Request the global master twice through NGINX using the provisioning Host
-header:
+Request the global master twice through NGINX on the provisioning port:
 
 ```bash
-curl -fsS -H 'Host: prov.example.com' \
+curl -fsS \
   http://localhost:8080/provisioning/000000000000.cfg \
   -o /tmp/polyprov-master-1.xml
 
-curl -fsS -H 'Host: prov.example.com' \
+curl -fsS \
   http://localhost:8080/provisioning/000000000000.cfg \
   -o /tmp/polyprov-master-2.xml
 
@@ -327,10 +314,8 @@ new fake check-ins:
 BEFORE=$(docker compose exec -T db psql -U polyprov -d polyprov -tAc \
   "select count(*) from checkin_event where mac='000000000000';")
 
-curl -fsS -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/000000000000.cfg >/dev/null
-curl -fsS -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/000000000000.cfg >/dev/null
+curl -fsS http://localhost:8080/provisioning/000000000000.cfg >/dev/null
+curl -fsS http://localhost:8080/provisioning/000000000000.cfg >/dev/null
 
 sleep 3
 
@@ -362,11 +347,11 @@ Result:
 The seed creates `0004f2000000`.
 
 ```bash
-curl -fsS -H 'Host: prov.example.com' \
+curl -fsS \
   http://localhost:8080/provisioning/0004f2000000.cfg \
   -o /tmp/polyprov-device-1.xml
 
-curl -fsS -H 'Host: prov.example.com' \
+curl -fsS \
   http://localhost:8080/provisioning/0004f2000000.cfg \
   -o /tmp/polyprov-device-2.xml
 
@@ -389,8 +374,7 @@ Observed result:
 ### 13. Validate Unknown MAC Request
 
 ```bash
-curl -i -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/0004f2ffffff.cfg
+curl -i http://localhost:8080/provisioning/0004f2ffffff.cfg
 ```
 
 Expected result:
@@ -408,8 +392,7 @@ Observed result:
 ### 14. Validate Malformed Filename
 
 ```bash
-curl -i -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/not-a-mac.cfg
+curl -i http://localhost:8080/provisioning/not-a-mac.cfg
 ```
 
 Expected result:
@@ -427,8 +410,7 @@ Observed result:
 ### 15. Validate Uppercase MAC Filename
 
 ```bash
-curl -i -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/0004F2000000.cfg
+curl -i http://localhost:8080/provisioning/0004F2000000.cfg
 ```
 
 Expected result:
@@ -444,8 +426,7 @@ Observed result:
 ### 16. Validate Suffix Filename Behavior
 
 ```bash
-curl -i -H 'Host: prov.example.com' \
-  http://localhost:8080/provisioning/0004f2000000-phone.cfg
+curl -i http://localhost:8080/provisioning/0004f2000000-phone.cfg
 ```
 
 Expected result:
@@ -542,24 +523,24 @@ environment.
 
 ### NGINX returns 404 for localhost health checks
 
-If these return `404`:
+If the admin readiness check returns `404` without a Host header:
 
 ```bash
-curl http://localhost:8080/healthz
 curl http://localhost:8081/readyz
 ```
 
-use explicit Host headers:
+use the admin Host header:
 
 ```bash
-curl -fsS -H 'Host: prov.example.com' http://localhost:8080/healthz
 curl -fsS -H 'Host: admin.example.com' http://localhost:8081/readyz
 ```
 
 Reason:
 
-- The Compose NGINX container currently loads the stock NGINX `default.conf`
-server for `localhost` in addition to PolyProv's mounted vhosts.
+- The Compose NGINX container uses one standard HTTP listener on container port
+`80` with virtual hosts. Both host ports `8080` and `8081` enter that listener,
+so NGINX routes admin traffic by `Host: admin.example.com`, not by the external
+host port alone.
 
 ### Seed fails with `No module named 'app'`
 
@@ -590,7 +571,7 @@ Milestone 0 provisioning validation is considered successful when:
 - The stack starts successfully.
 - DB, Redis, admin API, and provisioning API are healthy.
 - Database seed succeeds using the documented command for this environment.
-- NGINX health checks pass with correct Host headers.
+- Provisioning NGINX health passes on `localhost:8080` and admin readiness passes with `Host: admin.example.com`.
 - API containers pass direct readiness checks.
 - No fake `device` row exists for `000000000000`.
 - `000000000000.cfg` returns `200` and renders a global master config.

@@ -118,6 +118,7 @@ services:
       - "8080:80"   # provisioning plane
       - "8081:80"   # admin plane (use Host header or separate port mapping)
     volumes:
+      - ../../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ../../nginx/provisioning.conf:/etc/nginx/conf.d/provisioning.conf:ro
       - ../../nginx/admin.conf:/etc/nginx/conf.d/admin.conf:ro
       - ../../provisioning_root:/data/provisioning_root:ro
