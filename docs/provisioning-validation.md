@@ -98,10 +98,10 @@ Observed result:
 
 ### 5. Seed The Database
 
-Use `PYTHONPATH=/app` when running `tools/seed.py` inside the API container:
+Run `tools/seed.py` inside the API container:
 
 ```bash
-docker compose exec -e PYTHONPATH=/app admin-api python tools/seed.py
+docker compose exec admin-api python tools/seed.py
 ```
 
 Expected result:
@@ -114,26 +114,15 @@ Seed complete.
 
 Observed result:
 
-- Passed with the adjusted `PYTHONPATH=/app` command.
+- Passed after the backend image was rebuilt with `PYTHONPATH=/app`.
 
 Failure indicator:
 
-Running the documented command without `PYTHONPATH=/app` failed in this lab:
-
-```bash
-docker compose exec admin-api python tools/seed.py
-```
-
-Observed error:
+Older backend images that do not set `PYTHONPATH=/app` may fail with:
 
 ```text
 ModuleNotFoundError: No module named 'app'
 ```
-
-Documentation correction:
-
-- Future install/deployment docs should use the adjusted seed command or run the
-seed as a module/runtime that has `/app` on `PYTHONPATH`.
 
 ### 6. Validate HTTP Health Through NGINX
 
@@ -544,7 +533,15 @@ host port alone.
 
 ### Seed fails with `No module named 'app'`
 
-Use:
+Rebuild the backend image so it includes `PYTHONPATH=/app`:
+
+```bash
+cd ~/Projects/SipProv/Source/polyprov/deploy/docker
+docker compose build admin-api
+docker compose up -d --force-recreate admin-api
+```
+
+For older images, this temporary workaround can be used:
 
 ```bash
 docker compose exec -e PYTHONPATH=/app admin-api python tools/seed.py

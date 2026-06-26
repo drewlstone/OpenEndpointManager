@@ -2,7 +2,8 @@
 """Seed the database: create tables, roles, permissions, a superadmin, and a
 sample tenant + global template + a few devices.
 
-Run inside the API container after the DB is up:
+Run inside the API container after the DB is up. The backend image sets
+PYTHONPATH=/app so the top-level app package is importable:
     python tools/seed.py
 """
 from __future__ import annotations
