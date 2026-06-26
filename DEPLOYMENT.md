@@ -20,6 +20,64 @@ deployed and scaled independently:
 Back these with **managed PostgreSQL** (primary + read replicas), **managed
 Redis**, and **S3-compatible object storage** for firmware.
 
+## Docker Compose appliance mode
+
+For a single-node Ubuntu appliance, use the Compose stack in `deploy/docker/`
+and install the provided systemd unit manually. The unit is a template; adjust
+`WorkingDirectory` if the repository is installed somewhere other than
+`/opt/openendpointmanager`.
+
+The Compose services use `restart: unless-stopped`, so Docker restarts
+containers after crashes and daemon restarts. The API services expose Compose
+health checks against `/readyz`; NGINX and the UI wait for healthy API services
+before starting.
+
+```bash
+# one-time host setup
+sudo systemctl enable --now docker
+
+# install the application files wherever your appliance standard expects them
+sudo mkdir -p /opt/openendpointmanager
+sudo rsync -a --delete ./ /opt/openendpointmanager/
+
+# optional: verify the Compose file before installing the unit
+cd /opt/openendpointmanager/deploy/docker
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+
+# install the systemd unit manually
+sudo cp /opt/openendpointmanager/deploy/systemd/openendpointmanager.service \
+  /etc/systemd/system/openendpointmanager.service
+sudo systemctl daemon-reload
+sudo systemctl enable openendpointmanager.service
+sudo systemctl start openendpointmanager.service
+```
+
+Do not put `docker compose up --build` in the systemd unit. Boot should start
+known-good images quickly; rebuilds belong in an install or upgrade step.
+
+### Reboot validation
+
+After installing the unit, validate appliance recovery explicitly:
+
+```bash
+sudo reboot
+
+# after the host returns
+systemctl status docker --no-pager
+systemctl status openendpointmanager --no-pager
+cd /opt/openendpointmanager/deploy/docker
+docker compose ps
+curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost:8081/readyz
+curl -fsS http://localhost:3000/
+```
+
+Expected result: Docker is active, `openendpointmanager.service` is active
+(exited), Compose shows the long-running containers as Up/healthy where health
+checks exist, and the HTTP checks return success without manual intervention.
+
 ## Kubernetes (manifests)
 
 The manifests in `deploy/k8s/manifests.yaml` define everything:

@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: polyprov
       POSTGRES_PASSWORD: polyprov
@@ -16,6 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports: ["6379:6379"]
     volumes:
@@ -29,6 +31,7 @@ services:
   # S3-compatible object store for firmware (dev only)
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -41,6 +44,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
     environment:
       POLYPROV_PLANE: admin
       DATABASE_URL: postgresql+asyncpg://polyprov:polyprov@db:5432/polyprov
@@ -50,12 +54,19 @@ services:
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   prov-api:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
     environment:
       POLYPROV_PLANE: provisioning
       DATABASE_URL: postgresql+asyncpg://polyprov:polyprov@db:5432/polyprov
@@ -64,6 +75,12 @@ services:
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     deploy:
       replicas: 2  # demonstrate multiple prov nodes behind the LB
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -72,6 +89,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
     environment:
       DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
       REDIS_URL: redis://redis:6379/0
@@ -84,15 +102,18 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
     environment:
       DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
       REDIS_URL: redis://redis:6379/0
     depends_on:
+      db: {condition: service_healthy}
       redis: {condition: service_healthy}
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
 
   nginx:
     image: nginx:1.27-alpine
+    restart: unless-stopped
     ports:
       - "8080:80"   # provisioning plane
       - "8081:80"   # admin plane (use Host header or separate port mapping)
@@ -101,17 +122,18 @@ services:
       - ../../nginx/admin.conf:/etc/nginx/conf.d/admin.conf:ro
       - ../../provisioning_root:/data/provisioning_root:ro
     depends_on:
-      - admin-api
-      - prov-api
+      admin-api: {condition: service_healthy}
+      prov-api: {condition: service_healthy}
 
   ui:
     build:
       context: ../../ui
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"   # Admin web UI -> http://localhost:3000
     depends_on:
-      - admin-api
+      admin-api: {condition: service_healthy}
 
 volumes:
   pgdata:
