@@ -122,6 +122,7 @@ async def checkins(
     return [
         {
             "id": r.id, "mac": r.mac, "ip": r.ip,
+            "endpoint_ip": r.ip, "proxy_ip": r.proxy_ip,
             "ts": r.ts.isoformat() if r.ts else None,
             "user_agent": r.user_agent, "config_hash": r.config_hash,
         }

@@ -43,12 +43,13 @@ export default function DeviceDetail() {
         {checkins.loading ? <Loading /> : checkins.data?.length ? (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Time</th><th>IP</th><th>User agent</th><th>Config hash</th></tr></thead>
+              <thead><tr><th>Time</th><th>Endpoint IP</th><th>Proxy IP</th><th>User agent</th><th>Config hash</th></tr></thead>
               <tbody>
                 {checkins.data.map((c) => (
                   <tr key={c.id}>
                     <td className="mono muted">{c.ts?.replace("T", " ").slice(0, 19)}</td>
-                    <td className="mono">{c.ip || "—"}</td>
+                    <td className="mono">{c.endpoint_ip || c.ip || "—"}</td>
+                    <td className="mono muted">{c.proxy_ip || "—"}</td>
                     <td className="muted">{c.user_agent || "—"}</td>
                     <td className="mono muted">{c.config_hash ? c.config_hash.slice(0, 12) : "—"}</td>
                   </tr>

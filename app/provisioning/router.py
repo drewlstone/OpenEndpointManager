@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from ipaddress import ip_address, ip_network
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import PlainTextResponse
@@ -42,6 +43,11 @@ from app.services.firmware_resolver import resolve_firmware
 
 router = APIRouter(prefix="/provisioning", tags=["provisioning"])
 
+TRUSTED_PROXY_NETWORKS = (
+    ip_network("127.0.0.1/32"),
+    ip_network("172.16.0.0/12"),
+)
+
 
 def _mac_from_filename(filename: str) -> str | None:
     """Extract a MAC from filenames like 0004f2aabbcc.cfg or 0004f2aabbcc-phone.cfg."""
@@ -52,11 +58,47 @@ def _mac_from_filename(filename: str) -> str | None:
         return None
 
 
-async def _buffer_checkin(mac: str, ip: str | None, ua: str | None,
+def _valid_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    try:
+        return str(ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _is_trusted_proxy(ip: str | None) -> bool:
+    if ip is None:
+        return False
+    try:
+        addr = ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in network for network in TRUSTED_PROXY_NETWORKS)
+
+
+def _client_ips(request: Request) -> tuple[str | None, str | None]:
+    peer_ip = request.client.host if request.client else None
+    endpoint_ip = _valid_ip(peer_ip)
+
+    if _is_trusted_proxy(peer_ip):
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        x_real_ip = request.headers.get("x-real-ip")
+        forwarded_ip = None
+        if x_forwarded_for:
+            forwarded_ip = _valid_ip(x_forwarded_for.split(",", 1)[0])
+        endpoint_ip = forwarded_ip or _valid_ip(x_real_ip) or endpoint_ip
+
+    proxy_ip = peer_ip if peer_ip and endpoint_ip and peer_ip != endpoint_ip else None
+    return endpoint_ip, proxy_ip
+
+
+async def _buffer_checkin(mac: str, endpoint_ip: str | None, proxy_ip: str | None, ua: str | None,
                           path: str, status: int, cache_hit: bool,
                           cfg_hash: str | None, nbytes: int) -> None:
     payload = json.dumps({
-        "mac": mac, "ip": ip, "ua": ua, "path": path,
+        "mac": mac, "ip": endpoint_ip, "proxy_ip": proxy_ip, "ua": ua, "path": path,
         "status": status, "cache_hit": cache_hit,
         "config_hash": cfg_hash, "bytes": nbytes,
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -72,7 +114,7 @@ async def get_config(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     start = time.perf_counter()
-    client_ip = request.client.host if request.client else None
+    client_ip, proxy_ip = _client_ips(request)
     ua = request.headers.get("user-agent")
 
     is_global_master = filename == "000000000000.cfg"
@@ -130,7 +172,7 @@ async def get_config(
         # ---- CACHE HIT: no DB access at all ----
         metrics.cache_hits.inc()
         metrics.provisioning_requests.labels(path_type, "200", "hit").inc()
-        await _buffer_checkin(mac, client_ip, ua, filename, 200, True, None, len(cached))
+        await _buffer_checkin(mac, client_ip, proxy_ip, ua, filename, 200, True, None, len(cached))
         elapsed = time.perf_counter() - start
         metrics.provisioning_latency.labels(path_type).observe(elapsed)
         logger.info("prov hit", extra={"mac": mac, "path": filename,
@@ -146,7 +188,7 @@ async def get_config(
     if device is None:
         # Unknown device. Optionally auto-enroll; here we 404 and log.
         metrics.provisioning_requests.labels(path_type, "404", "miss").inc()
-        await _buffer_checkin(mac, client_ip, ua, filename, 404, False, None, 0)
+        await _buffer_checkin(mac, client_ip, proxy_ip, ua, filename, 404, False, None, 0)
         return PlainTextResponse("device not enrolled", status_code=404)
 
     effective = await resolve_effective_config(db, device)
@@ -168,7 +210,7 @@ async def get_config(
 
     cfg_hash = config_hash(body)
     metrics.provisioning_requests.labels(path_type, "200", "miss").inc()
-    await _buffer_checkin(mac, client_ip, ua, filename, 200, False, cfg_hash, len(body))
+    await _buffer_checkin(mac, client_ip, proxy_ip, ua, filename, 200, False, cfg_hash, len(body))
 
     elapsed = time.perf_counter() - start
     metrics.provisioning_latency.labels(path_type).observe(elapsed)

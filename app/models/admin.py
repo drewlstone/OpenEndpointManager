@@ -102,6 +102,7 @@ class CheckinEvent(Base):
     device_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     mac: Mapped[str] = mapped_column(CHAR(12), index=True)
     ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    proxy_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
     config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

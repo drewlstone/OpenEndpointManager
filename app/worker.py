@@ -48,13 +48,13 @@ def flush_checkins() -> int:
         # bulk insert check-in events
         session.execute(
             text(
-                "INSERT INTO checkin_event (mac, ip, ts, user_agent, config_hash) "
-                "VALUES (:mac, :ip, :ts, :ua, :config_hash)"
+                "INSERT INTO checkin_event (mac, ip, proxy_ip, ts, user_agent, config_hash) "
+                "VALUES (:mac, :ip, :proxy_ip, :ts, :ua, :config_hash)"
             ),
             [
                 {
                     "mac": b["mac"], "ip": b.get("ip"),
-                    "ts": b["ts"], "ua": b.get("ua"),
+                    "proxy_ip": b.get("proxy_ip"), "ts": b["ts"], "ua": b.get("ua"),
                     "config_hash": b.get("config_hash"),
                 }
                 for b in batch
