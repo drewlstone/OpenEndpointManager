@@ -32,6 +32,15 @@ celery_app.conf.beat_schedule = {
 _sync_engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
 _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
 
+DEVICE_PROVISIONING_USER_AGENT_PREFIX = "FileTransport Poly"
+
+
+def is_device_provisioning_request(user_agent: str | None) -> bool:
+    return bool(
+        user_agent
+        and user_agent.startswith(DEVICE_PROVISIONING_USER_AGENT_PREFIX)
+    )
+
 
 @celery_app.task(name="app.worker.flush_checkins")
 def flush_checkins() -> int:
@@ -44,22 +53,27 @@ def flush_checkins() -> int:
     if not batch:
         return 0
 
+    device_batch = [
+        b for b in batch if is_device_provisioning_request(b.get("ua"))
+    ]
+
     with Session(_sync_engine) as session:
-        # bulk insert check-in events
-        session.execute(
-            text(
-                "INSERT INTO checkin_event (mac, ip, proxy_ip, ts, user_agent, config_hash) "
-                "VALUES (:mac, :ip, :proxy_ip, :ts, :ua, :config_hash)"
-            ),
-            [
-                {
-                    "mac": b["mac"], "ip": b.get("ip"),
-                    "proxy_ip": b.get("proxy_ip"), "ts": b["ts"], "ua": b.get("ua"),
-                    "config_hash": b.get("config_hash"),
-                }
-                for b in batch
-            ],
-        )
+        # bulk insert real device check-in events
+        if device_batch:
+            session.execute(
+                text(
+                    "INSERT INTO checkin_event (mac, ip, proxy_ip, ts, user_agent, config_hash) "
+                    "VALUES (:mac, :ip, :proxy_ip, :ts, :ua, :config_hash)"
+                ),
+                [
+                    {
+                        "mac": b["mac"], "ip": b.get("ip"),
+                        "proxy_ip": b.get("proxy_ip"), "ts": b["ts"], "ua": b.get("ua"),
+                        "config_hash": b.get("config_hash"),
+                    }
+                    for b in device_batch
+                ],
+            )
         # bulk insert provisioning logs
         session.execute(
             text(
@@ -75,17 +89,21 @@ def flush_checkins() -> int:
                 for b in batch
             ],
         )
-        # update last_seen for the distinct macs in this batch
-        latest: dict[str, str] = {}
-        for b in batch:
-            latest[b["mac"]] = b["ts"]
-        session.execute(
-            text(
-                "UPDATE device SET last_seen_at = :ts, last_config_hash = "
-                "COALESCE(:h, last_config_hash) WHERE mac = :mac"
-            ),
-            [{"mac": m, "ts": ts, "h": None} for m, ts in latest.items()],
-        )
+        # update device telemetry only from real device check-ins
+        latest: dict[str, dict[str, str | None]] = {}
+        for b in device_batch:
+            latest[b["mac"]] = {"ts": b["ts"], "h": b.get("config_hash")}
+        if latest:
+            session.execute(
+                text(
+                    "UPDATE device SET last_seen_at = :ts, last_config_hash = "
+                    "COALESCE(:h, last_config_hash) WHERE mac = :mac"
+                ),
+                [
+                    {"mac": mac, "ts": values["ts"], "h": values["h"]}
+                    for mac, values in latest.items()
+                ],
+            )
         session.commit()
     return len(batch)
 
