@@ -27,6 +27,7 @@ from app.core.redis_client import (
     cache_set,
     config_cache_key,
     enqueue_checkin,
+    enqueue_discovery,
     get_device_generation,
     get_global_generation,
     rate_limit_ok,
@@ -39,6 +40,7 @@ from app.provisioning.renderer import (
     render_master_config,
 )
 from app.provisioning.resolver import resolve_effective_config
+from app.services.discovery import is_poly_provisioning_user_agent, parse_poly_user_agent
 from app.services.firmware_resolver import resolve_firmware
 
 router = APIRouter(prefix="/provisioning", tags=["provisioning"])
@@ -105,6 +107,24 @@ async def _buffer_checkin(mac: str, endpoint_ip: str | None, proxy_ip: str | Non
     }).encode()
     await enqueue_checkin(payload)
     metrics.checkins.inc()
+
+
+async def _buffer_discovery(mac: str, endpoint_ip: str | None, proxy_ip: str | None,
+                            ua: str | None, path: str, status: int) -> None:
+    details = parse_poly_user_agent(ua)
+    payload = json.dumps({
+        "mac": mac,
+        "model": details.model,
+        "firmware_version": details.firmware_version,
+        "serial": details.serial,
+        "endpoint_ip": endpoint_ip,
+        "proxy_ip": proxy_ip,
+        "user_agent": ua,
+        "last_path": path,
+        "last_status": status,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }).encode()
+    await enqueue_discovery(payload)
 
 
 @router.get("/{filename}", response_class=PlainTextResponse)
@@ -186,8 +206,10 @@ async def get_config(
     result = await db.execute(select(Device).where(Device.mac == mac))
     device = result.scalar_one_or_none()
     if device is None:
-        # Unknown device. Optionally auto-enroll; here we 404 and log.
+        # Unknown devices still 404; first-touch discovery is buffered asynchronously.
         metrics.provisioning_requests.labels(path_type, "404", "miss").inc()
+        if mac != "000000000000" and is_poly_provisioning_user_agent(ua):
+            await _buffer_discovery(mac, client_ip, proxy_ip, ua, filename, 404)
         await _buffer_checkin(mac, client_ip, proxy_ip, ua, filename, 404, False, None, 0)
         return PlainTextResponse("device not enrolled", status_code=404)
 

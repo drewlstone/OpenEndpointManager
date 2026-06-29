@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     config_cache_ttl: int = 3600  # seconds
     checkin_buffer_key: str = "polyprov:checkin:buffer"
+    discovery_buffer_key: str = "polyprov:discovery:buffer"
     checkin_flush_batch: int = 500
+    discovery_flush_batch: int = 500
 
     # Provisioning
     provisioning_base_path: str = "/provisioning/"

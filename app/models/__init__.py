@@ -1,5 +1,6 @@
 from app.models.org import Tenant, Site, DeviceGroup, GroupKind
 from app.models.device import Device, DeviceGroupMember
+from app.models.discovery import DiscoveredEndpoint
 from app.models.config import (
     ConfigTemplate,
     TemplateScope,
@@ -25,7 +26,7 @@ from app.models.admin import (
 
 __all__ = [
     "Tenant", "Site", "DeviceGroup", "GroupKind",
-    "Device", "DeviceGroupMember",
+    "Device", "DeviceGroupMember", "DiscoveredEndpoint",
     "ConfigTemplate", "TemplateScope", "FirmwareImage", "FirmwareAssignment",
     "FirmwareRing", "RolloutState", "RolloutWindow",
     "AdminUser", "Role", "Permission", "UserRole", "RolePermission",

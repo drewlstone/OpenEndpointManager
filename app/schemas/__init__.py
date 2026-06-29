@@ -92,6 +92,24 @@ class DeviceImportResult(BaseModel):
     errors: list[dict]
 
 
+class DiscoveredEndpointOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    mac: str
+    status: str
+    model: str | None
+    firmware_version: str | None
+    serial: str | None
+    endpoint_ip: str | None
+    proxy_ip: str | None
+    user_agent: str | None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    request_count: int
+    last_path: str
+    last_status: int
+
+
 class TemplateCreate(BaseModel):
     name: str
     scope: str

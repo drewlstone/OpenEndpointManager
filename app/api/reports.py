@@ -10,6 +10,7 @@ from app.api.deps import Principal, require_permission
 from app.core.db import get_db
 from app.models.admin import CheckinEvent, ErrorLog, ProvisioningLog
 from app.models.device import Device
+from app.models.discovery import DiscoveredEndpoint
 from app.models.org import Site, Tenant
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -45,6 +46,16 @@ async def dashboard(
     tenants = (await db.execute(select(func.count()).select_from(Tenant))).scalar_one()
     sites = (await db.execute(select(func.count()).select_from(Site))).scalar_one()
 
+    pending_discoveries = 0
+    if principal.tenant_id is None:
+        pending_discoveries = (
+            await db.execute(
+                select(func.count()).select_from(DiscoveredEndpoint).where(
+                    DiscoveredEndpoint.status == "pending"
+                )
+            )
+        ).scalar_one()
+
     # provisioning activity in last hour
     hour_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     prov_count = (
@@ -74,6 +85,7 @@ async def dashboard(
         "stale": stale,
         "tenants": tenants,
         "sites": sites,
+        "pending_discoveries": pending_discoveries,
         "provisioning_last_hour": prov_count,
         "errors_last_hour": error_count,
         "by_model": by_model,

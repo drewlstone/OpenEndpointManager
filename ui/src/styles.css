@@ -152,6 +152,8 @@ label { display: block; font-size: 12px; color: var(--text-dim); margin: 0 0 5px
   background: var(--ink-800); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 16px 18px;
 }
+a.tile { color: var(--text); text-decoration: none; }
+a.tile:hover { border-color: var(--amber-dim); text-decoration: none; }
 .tile .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-faint); }
 .tile .value { font-family: var(--mono); font-size: 28px; font-weight: 600; margin-top: 6px; }
 .tile .value.ok { color: var(--ok); }

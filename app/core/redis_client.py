@@ -54,6 +54,10 @@ async def enqueue_checkin(payload: bytes) -> None:
     await redis_client.rpush(settings.checkin_buffer_key, payload)
 
 
+async def enqueue_discovery(payload: bytes) -> None:
+    await redis_client.rpush(settings.discovery_buffer_key, payload)
+
+
 # ---- Rate limiting --------------------------------------------------------
 
 async def rate_limit_ok(identifier: str, limit: int, window: int = 60) -> bool:

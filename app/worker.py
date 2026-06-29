@@ -16,12 +16,17 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.discovery import is_poly_provisioning_user_agent
 
 celery_app = Celery("polyprov", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.beat_schedule = {
     "flush-checkins": {
         "task": "app.worker.flush_checkins",
         "schedule": 2.0,  # every 2 seconds
+    },
+    "flush-discoveries": {
+        "task": "app.worker.flush_discoveries",
+        "schedule": 2.0,
     },
     "create-log-partitions": {
         "task": "app.worker.ensure_log_partitions",
@@ -32,14 +37,8 @@ celery_app.conf.beat_schedule = {
 _sync_engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
 _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
 
-DEVICE_PROVISIONING_USER_AGENT_PREFIX = "FileTransport Poly"
-
-
 def is_device_provisioning_request(user_agent: str | None) -> bool:
-    return bool(
-        user_agent
-        and user_agent.startswith(DEVICE_PROVISIONING_USER_AGENT_PREFIX)
-    )
+    return is_poly_provisioning_user_agent(user_agent)
 
 
 @celery_app.task(name="app.worker.flush_checkins")
@@ -104,6 +103,60 @@ def flush_checkins() -> int:
                     for mac, values in latest.items()
                 ],
             )
+        session.commit()
+    return len(batch)
+
+
+@celery_app.task(name="app.worker.flush_discoveries")
+def flush_discoveries() -> int:
+    batch: list[dict] = []
+    for _ in range(settings.discovery_flush_batch):
+        raw = _sync_redis.lpop(settings.discovery_buffer_key)
+        if raw is None:
+            break
+        batch.append(json.loads(raw))
+    if not batch:
+        return 0
+
+    with Session(_sync_engine) as session:
+        session.execute(
+            text(
+                "INSERT INTO discovered_endpoint "
+                "(mac, status, model, firmware_version, serial, endpoint_ip, proxy_ip, "
+                "user_agent, first_seen_at, last_seen_at, request_count, last_path, "
+                "last_status, created_at, updated_at) "
+                "VALUES (:mac, 'pending', :model, :firmware_version, :serial, "
+                ":endpoint_ip, :proxy_ip, :user_agent, :ts, :ts, 1, :last_path, "
+                ":last_status, :ts, :ts) "
+                "ON CONFLICT (mac) DO UPDATE SET "
+                "model = COALESCE(EXCLUDED.model, discovered_endpoint.model), "
+                "firmware_version = COALESCE(EXCLUDED.firmware_version, discovered_endpoint.firmware_version), "
+                "serial = COALESCE(EXCLUDED.serial, discovered_endpoint.serial), "
+                "endpoint_ip = EXCLUDED.endpoint_ip, "
+                "proxy_ip = EXCLUDED.proxy_ip, "
+                "user_agent = EXCLUDED.user_agent, "
+                "last_seen_at = EXCLUDED.last_seen_at, "
+                "request_count = discovered_endpoint.request_count + 1, "
+                "last_path = EXCLUDED.last_path, "
+                "last_status = EXCLUDED.last_status, "
+                "updated_at = EXCLUDED.updated_at"
+            ),
+            [
+                {
+                    "mac": b["mac"],
+                    "model": b.get("model"),
+                    "firmware_version": b.get("firmware_version"),
+                    "serial": b.get("serial"),
+                    "endpoint_ip": b.get("endpoint_ip"),
+                    "proxy_ip": b.get("proxy_ip"),
+                    "user_agent": b.get("user_agent"),
+                    "ts": b["ts"],
+                    "last_path": b["last_path"],
+                    "last_status": b["last_status"],
+                }
+                for b in batch
+            ],
+        )
         session.commit()
     return len(batch)
 

@@ -93,6 +93,7 @@ export const api = {
   provisioningLogs: (q = "") => request(`/reports/provisioning-logs${q}`),
   checkins: (q = "") => request(`/reports/checkins${q}`),
   errors: () => request("/reports/errors"),
+  discoveries: (q = "") => request(`/discoveries${q}`),
 
   // devices
   devices: (q = "") => request(`/devices${q}`),

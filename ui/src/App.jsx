@@ -15,6 +15,7 @@ import Firmware from "./pages/Firmware.jsx";
 import Rollouts from "./pages/Rollouts.jsx";
 import ProvLogs from "./pages/ProvLogs.jsx";
 import Checkins from "./pages/Checkins.jsx";
+import Discoveries from "./pages/Discoveries.jsx";
 import Users from "./pages/Users.jsx";
 import Health from "./pages/Health.jsx";
 
@@ -42,6 +43,7 @@ const NAV = [
   { section: "Fleet" },
   { to: "/", label: "Dashboard", end: true },
   { to: "/devices", label: "Devices" },
+  { to: "/discoveries", label: "Pending Approval" },
   { to: "/checkins", label: "Check-in History" },
   { to: "/logs", label: "Provisioning Logs" },
   { section: "Configuration" },
@@ -111,6 +113,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/devices/:mac" element={<DeviceDetail />} />
+        <Route path="/discoveries" element={<Discoveries />} />
         <Route path="/checkins" element={<Checkins />} />
         <Route path="/logs" element={<ProvLogs />} />
         <Route path="/templates" element={<Templates />} />

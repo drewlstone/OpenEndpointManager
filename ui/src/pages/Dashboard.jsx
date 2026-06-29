@@ -26,6 +26,7 @@ export default function Dashboard() {
         <div className="tile"><div className="label">Stale (24h+)</div><div className="value warn">{d.stale ?? "—"}</div></div>
         <div className="tile"><div className="label">Errors (1h)</div><div className="value bad">{d.errors_last_hour ?? "—"}</div></div>
         <div className="tile"><div className="label">Provisioned (1h)</div><div className="value">{d.provisioning_last_hour ?? "—"}</div></div>
+        <Link className="tile" to="/discoveries"><div className="label">Pending Approval</div><div className="value warn">{d.pending_discoveries ?? "—"}</div></Link>
         <div className="tile"><div className="label">Tenants</div><div className="value">{d.tenants ?? "—"}</div></div>
         <div className="tile"><div className="label">Sites</div><div className="value">{d.sites ?? "—"}</div></div>
       </div>
