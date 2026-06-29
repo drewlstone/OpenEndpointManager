@@ -37,6 +37,7 @@ celery_app.conf.beat_schedule = {
 _sync_engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
 _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
 
+
 def is_device_provisioning_request(user_agent: str | None) -> bool:
     return is_poly_provisioning_user_agent(user_agent)
 
@@ -132,7 +133,12 @@ def flush_discoveries() -> int:
                 "model = COALESCE(EXCLUDED.model, discovered_endpoint.model), "
                 "firmware_version = COALESCE(EXCLUDED.firmware_version, discovered_endpoint.firmware_version), "
                 "serial = COALESCE(EXCLUDED.serial, discovered_endpoint.serial), "
-                "endpoint_ip = EXCLUDED.endpoint_ip, "
+                "endpoint_ip = CASE "
+                "WHEN EXCLUDED.endpoint_ip = '172.18.0.1' "
+                "AND discovered_endpoint.endpoint_ip IS NOT NULL "
+                "AND discovered_endpoint.endpoint_ip <> EXCLUDED.endpoint_ip "
+                "THEN discovered_endpoint.endpoint_ip "
+                "ELSE EXCLUDED.endpoint_ip END, "
                 "proxy_ip = EXCLUDED.proxy_ip, "
                 "user_agent = EXCLUDED.user_agent, "
                 "last_seen_at = EXCLUDED.last_seen_at, "
