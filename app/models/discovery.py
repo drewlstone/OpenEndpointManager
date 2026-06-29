@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, CHAR, DateTime, Index, Integer, String
+from sqlalchemy import BigInteger, CHAR, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -24,6 +24,11 @@ class DiscoveredEndpoint(Base):
     endpoint_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     proxy_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("device.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     request_count: Mapped[int] = mapped_column(Integer, default=1)
@@ -36,4 +41,5 @@ class DiscoveredEndpoint(Base):
         Index("ix_discovered_endpoint_status_last_seen", "status", "last_seen_at"),
         Index("ix_discovered_endpoint_model", "model"),
         Index("ix_discovered_endpoint_endpoint_ip", "endpoint_ip"),
+        Index("ix_discovered_endpoint_status_approved_at", "status", "approved_at"),
     )

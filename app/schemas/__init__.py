@@ -108,6 +108,24 @@ class DiscoveredEndpointOut(BaseModel):
     request_count: int
     last_path: str
     last_status: int
+    approved_device_id: int | None = None
+    approved_at: datetime | None = None
+    approved_by: str | None = None
+
+
+class DiscoveryApproveRequest(BaseModel):
+    tenant_id: int
+    site_id: int
+    primary_group_id: int | None = None
+    config_profile_id: int | None = None
+    model: str | None = Field(default=None, max_length=64)
+    serial: str | None = Field(default=None, max_length=64)
+    label: str | None = Field(default=None, max_length=255)
+
+
+class DiscoveryApproveResult(BaseModel):
+    discovery: DiscoveredEndpointOut
+    device: DeviceOut
 
 
 class TemplateCreate(BaseModel):

@@ -94,6 +94,8 @@ export const api = {
   checkins: (q = "") => request(`/reports/checkins${q}`),
   errors: () => request("/reports/errors"),
   discoveries: (q = "") => request(`/discoveries${q}`),
+  approveDiscovery: (id, body) =>
+    request(`/discoveries/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
 
   // devices
   devices: (q = "") => request(`/devices${q}`),
