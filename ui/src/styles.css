@@ -180,6 +180,16 @@ tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--ink-700); }
 td.mono, th.mono { font-family: var(--mono); }
 
+.table-sort {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0; border: none; background: transparent; color: inherit;
+  font: inherit; text-transform: inherit; letter-spacing: inherit;
+}
+.table-sort:hover { color: var(--text); text-decoration: none; border-color: transparent; }
+.table-sort span { min-width: 8px; color: var(--amber); }
+.inventory-table td { white-space: nowrap; }
+.toolbar input.wide-filter { min-width: min(520px, 100%); }
+
 /* ---- Status badges ---- */
 .badge {
   display: inline-flex; align-items: center; gap: 5px;

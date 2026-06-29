@@ -79,9 +79,28 @@ class DeviceOut(BaseModel):
     tenant_id: int
     mac: str
     model: str
+    serial: str | None = None
     site_id: int | None
+    primary_group_id: int | None = None
     status: str
     label: str | None
+    last_seen_at: datetime | None
+
+
+class DeviceInventoryOut(BaseModel):
+    id: int
+    tenant_id: int
+    tenant_name: str | None = None
+    site_id: int | None
+    site_name: str | None = None
+    primary_group_id: int | None = None
+    primary_group_name: str | None = None
+    mac: str
+    model: str
+    serial: str | None = None
+    label: str | None = None
+    endpoint_ip: str | None = None
+    status: str
     last_seen_at: datetime | None
 
 

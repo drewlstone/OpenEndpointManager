@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { Empty, ErrorBanner, Loading, Modal, Toast, useFetch } from "../lib/ui.jsx";
 
 function deviceStatus(d) {
+  if (d.status === "disabled") return { cls: "bad", text: "disabled" };
   if (!d.last_seen_at) return { cls: "warn", text: "never seen" };
   const ageMin = (Date.now() - new Date(d.last_seen_at).getTime()) / 60000;
   if (ageMin < 15) return { cls: "ok", text: "online" };
@@ -11,19 +12,54 @@ function deviceStatus(d) {
   return { cls: "bad", text: "stale" };
 }
 
+function formatTime(value) {
+  return value ? value.replace("T", " ").slice(0, 19) : "—";
+}
+
+function endpointHref(ip) {
+  if (!ip) return null;
+  return `http://${ip.includes(":") ? `[${ip}]` : ip}`;
+}
+
+const columns = [
+  ["mac", "MAC"],
+  ["model", "Model"],
+  ["serial", "Serial"],
+  ["label", "Label"],
+  ["endpoint_ip", "Endpoint IP"],
+  ["tenant", "Tenant"],
+  ["site", "Site"],
+  ["group", "Group"],
+  ["status", "Status"],
+  ["last_seen_at", "Last Seen"],
+];
+
 export default function Devices() {
-  const [model, setModel] = useState("");
+  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sort, setSort] = useState("mac");
+  const [direction, setDirection] = useState("asc");
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState(null);
   const fileRef = useRef();
 
   const q = new URLSearchParams();
-  if (model) q.set("model", model);
+  if (search.trim()) q.set("q", search.trim());
   if (statusFilter) q.set("status", statusFilter);
-  const qs = q.toString() ? `?${q}` : "";
+  q.set("sort", sort);
+  q.set("direction", direction);
+  const qs = `?${q}`;
 
   const { data, error, loading, reload } = useFetch(() => api.devices(qs), [qs]);
+
+  function toggleSort(key) {
+    if (sort === key) {
+      setDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setSort(key);
+      setDirection("asc");
+    }
+  }
 
   async function onImport(e) {
     const file = e.target.files?.[0];
@@ -52,7 +88,7 @@ export default function Devices() {
       </div>
 
       <div className="toolbar">
-        <input placeholder="Filter model (e.g. CCX)" value={model} onChange={(e) => setModel(e.target.value)} />
+        <input className="wide-filter" placeholder="Search MAC, model, serial, label, IP, tenant, site, group" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="enrolled">enrolled</option>
@@ -63,19 +99,31 @@ export default function Devices() {
       <ErrorBanner error={error} />
       {loading ? <Loading what="devices" /> :
        data && data.length ? (
-        <div className="table-wrap">
+        <div className="table-wrap inventory-table">
           <table>
-            <thead><tr><th>MAC</th><th>Model</th><th>Label</th><th>Status</th><th>Last seen</th></tr></thead>
+            <thead><tr>{columns.map(([key, label]) => (
+              <th key={key}>
+                <button className="table-sort" onClick={() => toggleSort(key)} aria-label={`Sort by ${label}`}>
+                  {label}<span>{sort === key ? (direction === "asc" ? "^" : "v") : ""}</span>
+                </button>
+              </th>
+            ))}</tr></thead>
             <tbody>
               {data.map((d) => {
                 const s = deviceStatus(d);
+                const endpoint = endpointHref(d.endpoint_ip);
                 return (
                   <tr key={d.id}>
                     <td className="mono"><Link to={`/devices/${d.mac}`}>{d.mac}</Link></td>
                     <td className="mono">{d.model}</td>
+                    <td className="mono muted">{d.serial || "—"}</td>
                     <td>{d.label || <span className="muted">—</span>}</td>
+                    <td className="mono">{endpoint ? <a href={endpoint} target="_blank" rel="noreferrer">{d.endpoint_ip}</a> : <span className="muted">—</span>}</td>
+                    <td>{d.tenant_name || <span className="muted">#{d.tenant_id}</span>}</td>
+                    <td>{d.site_name || <span className="muted">—</span>}</td>
+                    <td>{d.primary_group_name || <span className="muted">—</span>}</td>
                     <td><span className={"badge " + s.cls}><span className={"pip " + s.cls} />{s.text}</span></td>
-                    <td className="mono muted">{d.last_seen_at ? d.last_seen_at.replace("T", " ").slice(0, 19) : "—"}</td>
+                    <td className="mono muted">{formatTime(d.last_seen_at)}</td>
                   </tr>
                 );
               })}

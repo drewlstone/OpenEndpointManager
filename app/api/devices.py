@@ -5,15 +5,17 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal, require_permission
 from app.core.db import get_db
 from app.core.redis_client import bump_device_generation
 from app.core.security import normalize_mac
+from app.models.admin import CheckinEvent
 from app.models.device import Device
-from app.schemas import DeviceCreate, DeviceImportResult, DeviceOut
+from app.models.org import DeviceGroup, Site, Tenant
+from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut
 from app.services.device_import import import_devices
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -39,18 +41,64 @@ async def create_device(
     return device
 
 
-@router.get("", response_model=list[DeviceOut])
+DEVICE_SORTS = {
+    "mac": Device.mac,
+    "model": Device.model,
+    "serial": Device.serial,
+    "label": Device.label,
+    "tenant": Tenant.name,
+    "site": Site.name,
+    "group": DeviceGroup.name,
+    "status": Device.status,
+    "last_seen_at": Device.last_seen_at,
+}
+
+
+@router.get("", response_model=list[DeviceInventoryOut])
 async def list_devices(
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(require_permission("device:read")),
     tenant_id: int | None = None,
     site_id: int | None = None,
+    group_id: int | None = None,
     model: str | None = None,
+    q: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    sort: str = Query(default="mac"),
+    direction: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
-) -> list[Device]:
-    stmt = select(Device)
+) -> list[dict]:
+    latest_endpoint_ip = (
+        select(CheckinEvent.ip)
+        .where(CheckinEvent.mac == Device.mac)
+        .order_by(CheckinEvent.ts.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+
+    stmt = (
+        select(
+            Device.id.label("id"),
+            Device.tenant_id.label("tenant_id"),
+            Tenant.name.label("tenant_name"),
+            Device.site_id.label("site_id"),
+            Site.name.label("site_name"),
+            Device.primary_group_id.label("primary_group_id"),
+            DeviceGroup.name.label("primary_group_name"),
+            Device.mac.label("mac"),
+            Device.model.label("model"),
+            Device.serial.label("serial"),
+            Device.label.label("label"),
+            latest_endpoint_ip.label("endpoint_ip"),
+            Device.status.label("status"),
+            Device.last_seen_at.label("last_seen_at"),
+        )
+        .join(Tenant, Tenant.id == Device.tenant_id)
+        .outerjoin(Site, Site.id == Device.site_id)
+        .outerjoin(DeviceGroup, DeviceGroup.id == Device.primary_group_id)
+    )
+
     # tenant-scoped principals only see their tenant
     if principal.tenant_id is not None:
         stmt = stmt.where(Device.tenant_id == principal.tenant_id)
@@ -58,13 +106,33 @@ async def list_devices(
         stmt = stmt.where(Device.tenant_id == tenant_id)
     if site_id is not None:
         stmt = stmt.where(Device.site_id == site_id)
+    if group_id is not None:
+        stmt = stmt.where(Device.primary_group_id == group_id)
     if model is not None:
         stmt = stmt.where(Device.model == model)
     if status_filter is not None:
         stmt = stmt.where(Device.status == status_filter)
-    stmt = stmt.order_by(Device.id).limit(limit).offset(offset)
+    if q:
+        term = f"%{q.strip()}%"
+        mac_term = f"%{q.replace(':', '').replace('-', '').lower()}%"
+        stmt = stmt.where(
+            or_(
+                Device.mac.ilike(mac_term),
+                Device.model.ilike(term),
+                Device.serial.ilike(term),
+                Device.label.ilike(term),
+                latest_endpoint_ip.ilike(term),
+                Tenant.name.ilike(term),
+                Site.name.ilike(term),
+                DeviceGroup.name.ilike(term),
+            )
+        )
+
+    sort_expr = latest_endpoint_ip if sort == "endpoint_ip" else DEVICE_SORTS.get(sort, Device.mac)
+    order_expr = sort_expr.desc() if direction == "desc" else sort_expr.asc()
+    stmt = stmt.order_by(order_expr.nullslast(), Device.id).limit(limit).offset(offset)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    return [dict(row) for row in result.mappings().all()]
 
 
 @router.get("/{mac}", response_model=DeviceOut)
