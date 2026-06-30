@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { endpointHref } from "../lib/endpoints";
 import { Empty, ErrorBanner, Loading, Modal, Toast, useFetch } from "../lib/ui.jsx";
 
 function checkinStatus(d) {
@@ -26,11 +27,6 @@ function reachabilityStatus(d) {
 
 function formatTime(value) {
   return value ? value.replace("T", " ").slice(0, 19) : "—";
-}
-
-function endpointHref(ip) {
-  if (!ip) return null;
-  return `http://${ip.includes(":") ? `[${ip}]` : ip}`;
 }
 
 const columns = [

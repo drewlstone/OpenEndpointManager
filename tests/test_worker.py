@@ -55,6 +55,7 @@ def test_device_checkin_telemetry_extracts_current_state_fields():
         "ts": "2026-06-30T12:34:56+00:00",
         "ip": "192.0.2.10",
         "proxy_ip": "172.18.0.1",
+        "serial": "482567b5313f",
         "software_version": "8.0.2.3267",
         "h": "abc123",
     }
@@ -69,6 +70,7 @@ def test_device_checkin_telemetry_handles_unparseable_version():
         "config_hash": None,
     })
 
+    assert telemetry["serial"] is None
     assert telemetry["software_version"] is None
     assert telemetry["ip"] == "192.0.2.10"
     assert telemetry["proxy_ip"] is None

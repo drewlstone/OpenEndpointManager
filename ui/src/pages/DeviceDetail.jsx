@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { endpointHref } from "../lib/endpoints";
 import { Empty, ErrorBanner, Loading, Modal, Toast, useFetch } from "../lib/ui.jsx";
 
 export default function DeviceDetail() {
@@ -14,6 +15,8 @@ export default function DeviceDetail() {
   if (loading) return <Loading what="device" />;
   if (error) return <ErrorBanner error={error} />;
   if (!device) return <Empty>Device not found.</Empty>;
+
+  const endpoint = endpointHref(device.endpoint_ip);
 
   return (
     <div>
@@ -30,11 +33,16 @@ export default function DeviceDetail() {
         <dl className="kv">
           <dt>MAC</dt><dd>{device.mac}</dd>
           <dt>Model</dt><dd>{device.model}</dd>
+          <dt>Software</dt><dd>{device.software_version || "—"}</dd>
+          <dt>Serial</dt><dd>{device.serial || "—"}</dd>
           <dt>Label</dt><dd>{device.label || "—"}</dd>
           <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
           <dt>Site ID</dt><dd>{device.site_id ?? "—"}</dd>
           <dt>Status</dt><dd>{device.status}</dd>
-          <dt>Last seen</dt><dd>{device.last_seen_at ? device.last_seen_at.replace("T", " ").slice(0, 19) : "never"}</dd>
+          <dt>Endpoint IP</dt><dd>{endpoint ? <a href={endpoint} target="_blank" rel="noreferrer">{device.endpoint_ip}</a> : "—"}</dd>
+          <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
+          <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+          <dt>Last check-in</dt><dd>{(device.last_checkin_at || device.last_seen_at) ? (device.last_checkin_at || device.last_seen_at).replace("T", " ").slice(0, 19) : "never"}</dd>
         </dl>
       </div>
 

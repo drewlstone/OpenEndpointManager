@@ -44,11 +44,13 @@ def is_device_provisioning_request(user_agent: str | None) -> bool:
 
 def device_checkin_telemetry(batch_item: dict) -> dict[str, str | None]:
     user_agent = batch_item.get("ua")
+    details = parse_poly_user_agent(user_agent)
     return {
         "ts": batch_item["ts"],
         "ip": batch_item.get("ip"),
         "proxy_ip": batch_item.get("proxy_ip"),
-        "software_version": parse_poly_user_agent(user_agent).firmware_version,
+        "serial": details.serial,
+        "software_version": details.firmware_version,
         "h": batch_item.get("config_hash"),
     }
 
@@ -112,6 +114,9 @@ def flush_checkins() -> int:
                     "last_checkin_at = :ts, "
                     "endpoint_ip = :ip, "
                     "proxy_ip = :proxy_ip, "
+                    "serial = CASE "
+                    "WHEN :serial IS NOT NULL AND (serial IS NULL OR serial = '' OR serial = :serial) "
+                    "THEN :serial ELSE serial END, "
                     "software_version = COALESCE(:software_version, software_version), "
                     "last_config_hash = COALESCE(:h, last_config_hash) "
                     "WHERE mac = :mac"
@@ -122,6 +127,7 @@ def flush_checkins() -> int:
                         "ts": values["ts"],
                         "ip": values["ip"],
                         "proxy_ip": values["proxy_ip"],
+                        "serial": values["serial"],
                         "software_version": values["software_version"],
                         "h": values["h"],
                     }
