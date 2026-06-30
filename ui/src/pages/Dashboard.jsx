@@ -22,7 +22,7 @@ export default function Dashboard() {
 
       <div className="tiles">
         <div className="tile"><div className="label">Total Devices</div><div className="value">{d.total_devices ?? "—"}</div></div>
-        <div className="tile"><div className="label">Online (15m)</div><div className="value ok">{d.online ?? "—"}</div></div>
+        <div className="tile"><div className="label">Recent Check-ins (15m)</div><div className="value ok">{d.recent_checkins ?? d.online ?? "—"}</div></div>
         <div className="tile"><div className="label">Stale (24h+)</div><div className="value warn">{d.stale ?? "—"}</div></div>
         <div className="tile"><div className="label">Errors (1h)</div><div className="value bad">{d.errors_last_hour ?? "—"}</div></div>
         <div className="tile"><div className="label">Provisioned (1h)</div><div className="value">{d.provisioning_last_hour ?? "—"}</div></div>

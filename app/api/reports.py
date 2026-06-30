@@ -27,17 +27,19 @@ async def dashboard(
         dev_q = dev_q.where(Device.tenant_id == principal.tenant_id)
     total_devices = (await db.execute(dev_q)).scalar_one()
 
-    # devices seen in the last 15 minutes are "online"
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
-    online_q = select(func.count()).select_from(Device).where(Device.last_seen_at >= cutoff)
-    if principal.tenant_id is not None:
-        online_q = online_q.where(Device.tenant_id == principal.tenant_id)
-    online = (await db.execute(online_q)).scalar_one()
+    checkin_at = func.coalesce(Device.last_checkin_at, Device.last_seen_at)
 
-    # stale: never seen or not seen in 24h
+    # Devices with recent check-ins contacted the server recently; this is not reachability.
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    recent_checkins_q = select(func.count()).select_from(Device).where(checkin_at >= cutoff)
+    if principal.tenant_id is not None:
+        recent_checkins_q = recent_checkins_q.where(Device.tenant_id == principal.tenant_id)
+    recent_checkins = (await db.execute(recent_checkins_q)).scalar_one()
+
+    # stale: never checked in or not checked in for 24h
     stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     stale_q = select(func.count()).select_from(Device).where(
-        (Device.last_seen_at.is_(None)) | (Device.last_seen_at < stale_cutoff)
+        (checkin_at.is_(None)) | (checkin_at < stale_cutoff)
     )
     if principal.tenant_id is not None:
         stale_q = stale_q.where(Device.tenant_id == principal.tenant_id)
@@ -81,7 +83,8 @@ async def dashboard(
 
     return {
         "total_devices": total_devices,
-        "online": online,
+        "recent_checkins": recent_checkins,
+        "online": recent_checkins,
         "stale": stale,
         "tenants": tenants,
         "sites": sites,
