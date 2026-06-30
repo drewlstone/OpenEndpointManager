@@ -77,7 +77,10 @@ async def list_devices(
 ) -> list[dict]:
     latest_endpoint_ip = (
         select(CheckinEvent.ip)
-        .where(CheckinEvent.mac == Device.mac)
+        .where(
+            CheckinEvent.mac == Device.mac,
+            CheckinEvent.user_agent.startswith("FileTransport Poly"),
+        )
         .order_by(CheckinEvent.ts.desc())
         .limit(1)
         .scalar_subquery()

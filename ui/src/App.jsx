@@ -31,7 +31,7 @@ function FleetStrip() {
   if (!stats) return <div className="fleet-strip muted">fleet status…</div>;
   return (
     <div className="fleet-strip">
-      <span className="fleet-stat"><span className="pip ok" /> <span className="num">{stats.online}</span> online</span>
+      <span className="fleet-stat"><span className="pip ok" /> <span className="num">{stats.recent_checkins ?? stats.online}</span> recent check-ins</span>
       <span className="fleet-stat"><span className="pip warn" /> <span className="num">{stats.stale}</span> stale</span>
       <span className="fleet-stat"><span className="pip bad" /> <span className="num">{stats.errors_last_hour}</span> errors/hr</span>
       <span className="fleet-stat muted"><span className="num">{stats.total_devices}</span> total</span>
