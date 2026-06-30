@@ -16,7 +16,8 @@ export default function DeviceDetail() {
   if (error) return <ErrorBanner error={error} />;
   if (!device) return <Empty>Device not found.</Empty>;
 
-  const endpoint = endpointHref(device.endpoint_ip);
+  const httpEndpoint = endpointHref(device.endpoint_ip, "http");
+  const httpsEndpoint = endpointHref(device.endpoint_ip, "https");
 
   return (
     <div>
@@ -39,7 +40,8 @@ export default function DeviceDetail() {
           <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
           <dt>Site ID</dt><dd>{device.site_id ?? "—"}</dd>
           <dt>Status</dt><dd>{device.status}</dd>
-          <dt>Endpoint IP</dt><dd>{endpoint ? <a href={endpoint} target="_blank" rel="noreferrer">{device.endpoint_ip}</a> : "—"}</dd>
+          <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
+          <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
           <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
           <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
           <dt>Last check-in</dt><dd>{(device.last_checkin_at || device.last_seen_at) ? (device.last_checkin_at || device.last_seen_at).replace("T", " ").slice(0, 19) : "never"}</dd>
