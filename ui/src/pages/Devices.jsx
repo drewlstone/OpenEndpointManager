@@ -3,13 +3,25 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { Empty, ErrorBanner, Loading, Modal, Toast, useFetch } from "../lib/ui.jsx";
 
-function deviceStatus(d) {
-  if (d.status === "disabled") return { cls: "bad", text: "disabled" };
-  if (!d.last_seen_at) return { cls: "warn", text: "never seen" };
-  const ageMin = (Date.now() - new Date(d.last_seen_at).getTime()) / 60000;
-  if (ageMin < 15) return { cls: "ok", text: "online" };
-  if (ageMin < 1440) return { cls: "warn", text: "idle" };
-  return { cls: "bad", text: "stale" };
+function checkinStatus(d) {
+  const ts = d.last_checkin_at || d.last_seen_at;
+  if (!ts) return { cls: "warn", text: "Never Seen" };
+  const ageMin = (Date.now() - new Date(ts).getTime()) / 60000;
+  if (ageMin < 15) return { cls: "ok", text: "Recent Check-in" };
+  if (ageMin < 1440) return { cls: "warn", text: "Idle" };
+  return { cls: "bad", text: "Stale" };
+}
+
+function lifecycleStatus(d) {
+  const value = d.lifecycle_status || d.status || "unknown";
+  return { cls: value === "disabled" ? "bad" : "info", text: value };
+}
+
+function reachabilityStatus(d) {
+  const value = d.reachability_status || "unknown";
+  if (value === "reachable") return { cls: "ok", text: "Reachable" };
+  if (value === "unreachable") return { cls: "bad", text: "Unreachable" };
+  return { cls: "", text: "Unknown" };
 }
 
 function formatTime(value) {
@@ -24,14 +36,16 @@ function endpointHref(ip) {
 const columns = [
   ["mac", "MAC"],
   ["model", "Model"],
+  ["software_version", "Software"],
   ["serial", "Serial"],
   ["label", "Label"],
   ["endpoint_ip", "Endpoint IP"],
   ["tenant", "Tenant"],
   ["site", "Site"],
   ["group", "Group"],
-  ["status", "Status"],
-  ["last_seen_at", "Last Seen"],
+  ["lifecycle_status", "Lifecycle"],
+  ["last_checkin_at", "Last Check-in"],
+  ["reachability_status", "Reachability"],
 ];
 
 export default function Devices() {
@@ -88,7 +102,7 @@ export default function Devices() {
       </div>
 
       <div className="toolbar">
-        <input className="wide-filter" placeholder="Search MAC, model, serial, label, IP, tenant, site, group" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="wide-filter" placeholder="Search MAC, model, software, serial, label, IP, tenant, site, group" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="enrolled">enrolled</option>
@@ -110,20 +124,27 @@ export default function Devices() {
             ))}</tr></thead>
             <tbody>
               {data.map((d) => {
-                const s = deviceStatus(d);
+                const lifecycle = lifecycleStatus(d);
+                const checkin = checkinStatus(d);
+                const reachability = reachabilityStatus(d);
                 const endpoint = endpointHref(d.endpoint_ip);
                 return (
                   <tr key={d.id}>
                     <td className="mono"><Link to={`/devices/${d.mac}`}>{d.mac}</Link></td>
                     <td className="mono">{d.model}</td>
+                    <td className="mono muted">{d.software_version || "—"}</td>
                     <td className="mono muted">{d.serial || "—"}</td>
                     <td>{d.label || <span className="muted">—</span>}</td>
                     <td className="mono">{endpoint ? <a href={endpoint} target="_blank" rel="noreferrer">{d.endpoint_ip}</a> : <span className="muted">—</span>}</td>
                     <td>{d.tenant_name || <span className="muted">#{d.tenant_id}</span>}</td>
                     <td>{d.site_name || <span className="muted">—</span>}</td>
                     <td>{d.primary_group_name || <span className="muted">—</span>}</td>
-                    <td><span className={"badge " + s.cls}><span className={"pip " + s.cls} />{s.text}</span></td>
-                    <td className="mono muted">{formatTime(d.last_seen_at)}</td>
+                    <td><span className={"badge " + lifecycle.cls}>{lifecycle.text}</span></td>
+                    <td>
+                      <span className={"badge " + checkin.cls}><span className={"pip " + checkin.cls} />{checkin.text}</span>
+                      <div className="mono muted">{formatTime(d.last_checkin_at || d.last_seen_at)}</div>
+                    </td>
+                    <td><span className={"badge " + reachability.cls}>{reachability.text}</span></td>
                   </tr>
                 );
               })}

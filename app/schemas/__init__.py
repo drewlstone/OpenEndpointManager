@@ -85,6 +85,14 @@ class DeviceOut(BaseModel):
     status: str
     label: str | None
     last_seen_at: datetime | None
+    last_checkin_at: datetime | None = None
+    endpoint_ip: str | None = None
+    proxy_ip: str | None = None
+    software_version: str | None = None
+    reachability_status: str = "unknown"
+    reachability_checked_at: datetime | None = None
+    identity_confidence: str = "unknown"
+    provisioning_health: str = "unknown"
 
 
 class DeviceInventoryOut(BaseModel):
@@ -100,8 +108,15 @@ class DeviceInventoryOut(BaseModel):
     serial: str | None = None
     label: str | None = None
     endpoint_ip: str | None = None
+    proxy_ip: str | None = None
+    software_version: str | None = None
     status: str
+    lifecycle_status: str
     last_seen_at: datetime | None
+    last_checkin_at: datetime | None = None
+    reachability_status: str = "unknown"
+    identity_confidence: str = "unknown"
+    provisioning_health: str = "unknown"
 
 
 class DeviceImportResult(BaseModel):

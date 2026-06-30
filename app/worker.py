@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.services.discovery import is_poly_provisioning_user_agent
+from app.services.discovery import is_poly_provisioning_user_agent, parse_poly_user_agent
 
 celery_app = Celery("polyprov", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.beat_schedule = {
@@ -40,6 +40,17 @@ _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
 
 def is_device_provisioning_request(user_agent: str | None) -> bool:
     return is_poly_provisioning_user_agent(user_agent)
+
+
+def device_checkin_telemetry(batch_item: dict) -> dict[str, str | None]:
+    user_agent = batch_item.get("ua")
+    return {
+        "ts": batch_item["ts"],
+        "ip": batch_item.get("ip"),
+        "proxy_ip": batch_item.get("proxy_ip"),
+        "software_version": parse_poly_user_agent(user_agent).firmware_version,
+        "h": batch_item.get("config_hash"),
+    }
 
 
 @celery_app.task(name="app.worker.flush_checkins")
@@ -92,15 +103,28 @@ def flush_checkins() -> int:
         # update device telemetry only from real device check-ins
         latest: dict[str, dict[str, str | None]] = {}
         for b in device_batch:
-            latest[b["mac"]] = {"ts": b["ts"], "h": b.get("config_hash")}
+            latest[b["mac"]] = device_checkin_telemetry(b)
         if latest:
             session.execute(
                 text(
-                    "UPDATE device SET last_seen_at = :ts, last_config_hash = "
-                    "COALESCE(:h, last_config_hash) WHERE mac = :mac"
+                    "UPDATE device SET "
+                    "last_seen_at = :ts, "
+                    "last_checkin_at = :ts, "
+                    "endpoint_ip = :ip, "
+                    "proxy_ip = :proxy_ip, "
+                    "software_version = COALESCE(:software_version, software_version), "
+                    "last_config_hash = COALESCE(:h, last_config_hash) "
+                    "WHERE mac = :mac"
                 ),
                 [
-                    {"mac": mac, "ts": values["ts"], "h": values["h"]}
+                    {
+                        "mac": mac,
+                        "ts": values["ts"],
+                        "ip": values["ip"],
+                        "proxy_ip": values["proxy_ip"],
+                        "software_version": values["software_version"],
+                        "h": values["h"],
+                    }
                     for mac, values in latest.items()
                 ],
             )

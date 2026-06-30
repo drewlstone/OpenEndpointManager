@@ -48,12 +48,28 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    last_checkin_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    endpoint_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    proxy_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    software_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reachability_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    reachability_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    identity_confidence: Mapped[str] = mapped_column(String(32), default="unknown")
+    provisioning_health: Mapped[str] = mapped_column(String(32), default="unknown")
     last_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     __table_args__ = (
         Index("ix_device_tenant_site_status", "tenant_id", "site_id", "status"),
         Index("ix_device_last_seen", "last_seen_at"),
+        Index("ix_device_last_checkin", "last_checkin_at"),
+        Index("ix_device_endpoint_ip", "endpoint_ip"),
+        Index("ix_device_reachability_status", "reachability_status"),
+        Index("ix_device_provisioning_health", "provisioning_health"),
         Index("ix_device_firmware_target", "firmware_target_id"),
     )
 

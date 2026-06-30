@@ -1,5 +1,5 @@
 from app.services.discovery import parse_poly_user_agent
-from app.worker import is_device_provisioning_request
+from app.worker import device_checkin_telemetry, is_device_provisioning_request
 
 
 def test_device_provisioning_request_user_agent_detection():
@@ -40,3 +40,35 @@ def test_non_poly_user_agent_has_no_discovery_details():
     assert info.model is None
     assert info.firmware_version is None
     assert info.serial is None
+
+
+def test_device_checkin_telemetry_extracts_current_state_fields():
+    telemetry = device_checkin_telemetry({
+        "ts": "2026-06-30T12:34:56+00:00",
+        "ip": "192.0.2.10",
+        "proxy_ip": "172.18.0.1",
+        "ua": "FileTransport PolyCCX-CCX_600-UA/8.0.2.3267 (SN:482567b5313f) Type/Application",
+        "config_hash": "abc123",
+    })
+
+    assert telemetry == {
+        "ts": "2026-06-30T12:34:56+00:00",
+        "ip": "192.0.2.10",
+        "proxy_ip": "172.18.0.1",
+        "software_version": "8.0.2.3267",
+        "h": "abc123",
+    }
+
+
+def test_device_checkin_telemetry_handles_unparseable_version():
+    telemetry = device_checkin_telemetry({
+        "ts": "2026-06-30T12:34:56+00:00",
+        "ip": "192.0.2.10",
+        "proxy_ip": None,
+        "ua": "FileTransport Poly",
+        "config_hash": None,
+    })
+
+    assert telemetry["software_version"] is None
+    assert telemetry["ip"] == "192.0.2.10"
+    assert telemetry["proxy_ip"] is None

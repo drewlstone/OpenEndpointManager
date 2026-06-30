@@ -5,7 +5,7 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal, require_permission
@@ -50,7 +50,13 @@ DEVICE_SORTS = {
     "site": Site.name,
     "group": DeviceGroup.name,
     "status": Device.status,
+    "lifecycle_status": Device.status,
     "last_seen_at": Device.last_seen_at,
+    "last_checkin_at": Device.last_checkin_at,
+    "endpoint_ip": Device.endpoint_ip,
+    "software_version": Device.software_version,
+    "reachability_status": Device.reachability_status,
+    "provisioning_health": Device.provisioning_health,
 }
 
 
@@ -77,6 +83,9 @@ async def list_devices(
         .scalar_subquery()
     )
 
+    endpoint_ip = func.coalesce(Device.endpoint_ip, latest_endpoint_ip)
+    last_checkin_at = func.coalesce(Device.last_checkin_at, Device.last_seen_at)
+
     stmt = (
         select(
             Device.id.label("id"),
@@ -90,9 +99,16 @@ async def list_devices(
             Device.model.label("model"),
             Device.serial.label("serial"),
             Device.label.label("label"),
-            latest_endpoint_ip.label("endpoint_ip"),
+            endpoint_ip.label("endpoint_ip"),
+            Device.proxy_ip.label("proxy_ip"),
+            Device.software_version.label("software_version"),
             Device.status.label("status"),
+            Device.status.label("lifecycle_status"),
             Device.last_seen_at.label("last_seen_at"),
+            last_checkin_at.label("last_checkin_at"),
+            func.coalesce(Device.reachability_status, literal("unknown")).label("reachability_status"),
+            func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
+            func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
         )
         .join(Tenant, Tenant.id == Device.tenant_id)
         .outerjoin(Site, Site.id == Device.site_id)
@@ -121,14 +137,21 @@ async def list_devices(
                 Device.model.ilike(term),
                 Device.serial.ilike(term),
                 Device.label.ilike(term),
-                latest_endpoint_ip.ilike(term),
+                Device.software_version.ilike(term),
+                endpoint_ip.ilike(term),
+                Device.proxy_ip.ilike(term),
                 Tenant.name.ilike(term),
                 Site.name.ilike(term),
                 DeviceGroup.name.ilike(term),
             )
         )
 
-    sort_expr = latest_endpoint_ip if sort == "endpoint_ip" else DEVICE_SORTS.get(sort, Device.mac)
+    if sort == "endpoint_ip":
+        sort_expr = endpoint_ip
+    elif sort == "last_checkin_at":
+        sort_expr = last_checkin_at
+    else:
+        sort_expr = DEVICE_SORTS.get(sort, Device.mac)
     order_expr = sort_expr.desc() if direction == "desc" else sort_expr.asc()
     stmt = stmt.order_by(order_expr.nullslast(), Device.id).limit(limit).offset(offset)
     result = await db.execute(stmt)
