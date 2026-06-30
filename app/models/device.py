@@ -35,6 +35,7 @@ class Device(Base):
     model: Mapped[str] = mapped_column(String(64), index=True, default="CCX")
     serial: Mapped[str | None] = mapped_column(String(64), nullable=True)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    asset_tag: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # explicit overrides
     firmware_target_id: Mapped[int | None] = mapped_column(

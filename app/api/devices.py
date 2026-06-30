@@ -13,12 +13,20 @@ from app.core.db import get_db
 from app.core.redis_client import bump_device_generation
 from app.core.security import normalize_mac
 from app.models.admin import CheckinEvent
+from app.models.config import ConfigTemplate, TemplateScope
 from app.models.device import Device
 from app.models.org import DeviceGroup, Site, Tenant
-from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut
+from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut, DeviceUpdate
 from app.services.device_import import import_devices
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+
+
+def _clean_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
 
 
 @router.post("", response_model=DeviceOut, status_code=201)
@@ -46,6 +54,7 @@ DEVICE_SORTS = {
     "model": Device.model,
     "serial": Device.serial,
     "label": Device.label,
+    "asset_tag": Device.asset_tag,
     "tenant": Tenant.name,
     "site": Site.name,
     "group": DeviceGroup.name,
@@ -102,6 +111,7 @@ async def list_devices(
             Device.model.label("model"),
             Device.serial.label("serial"),
             Device.label.label("label"),
+            Device.asset_tag.label("asset_tag"),
             endpoint_ip.label("endpoint_ip"),
             Device.proxy_ip.label("proxy_ip"),
             Device.software_version.label("software_version"),
@@ -140,6 +150,7 @@ async def list_devices(
                 Device.model.ilike(term),
                 Device.serial.ilike(term),
                 Device.label.ilike(term),
+                Device.asset_tag.ilike(term),
                 Device.software_version.ilike(term),
                 endpoint_ip.ilike(term),
                 Device.proxy_ip.ilike(term),
@@ -172,6 +183,67 @@ async def get_device(
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
+    return device
+
+
+@router.patch("/{mac}", response_model=DeviceOut)
+async def update_device(
+    mac: str,
+    req: DeviceUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_permission("device:write")),
+) -> Device:
+    norm = normalize_mac(mac)
+    result = await db.execute(select(Device).where(Device.mac == norm))
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
+
+    updates = req.model_dump(exclude_unset=True)
+    bump_generation = False
+
+    if "site_id" in updates and updates["site_id"] is not None:
+        site = await db.get(Site, updates["site_id"])
+        if site is None or site.tenant_id != device.tenant_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "site must belong to device tenant")
+
+    effective_site_id = updates.get("site_id", device.site_id)
+    effective_group_id = updates.get("primary_group_id", device.primary_group_id)
+    if effective_group_id is not None:
+        group = await db.get(DeviceGroup, effective_group_id)
+        if group is None or group.tenant_id != device.tenant_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "group must belong to device tenant")
+        if group.site_id is not None and group.site_id != effective_site_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "group must belong to selected site")
+
+    if "config_profile_id" in updates and updates["config_profile_id"] is not None:
+        template = await db.get(ConfigTemplate, updates["config_profile_id"])
+        if template is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "template not found")
+        is_global = template.scope == TemplateScope.global_
+        belongs_to_tenant = template.tenant_id == device.tenant_id
+        if not is_global and not belongs_to_tenant:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "template must be global or belong to device tenant")
+
+    for field in ("label", "asset_tag"):
+        if field in updates:
+            setattr(device, field, _clean_optional_string(updates[field]))
+
+    if "site_id" in updates and device.site_id != updates["site_id"]:
+        device.site_id = updates["site_id"]
+        bump_generation = True
+    if "primary_group_id" in updates and device.primary_group_id != updates["primary_group_id"]:
+        device.primary_group_id = updates["primary_group_id"]
+        bump_generation = True
+    if "config_profile_id" in updates and device.config_profile_id != updates["config_profile_id"]:
+        device.config_profile_id = updates["config_profile_id"]
+        bump_generation = True
+    if "status" in updates:
+        device.status = updates["status"]
+
+    if bump_generation:
+        await bump_device_generation(norm)
+    await db.flush()
     return device
 
 

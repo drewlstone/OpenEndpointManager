@@ -101,6 +101,8 @@ export const api = {
   devices: (q = "") => request(`/devices${q}`),
   device: (mac) => request(`/devices/${mac}`),
   createDevice: (body) => request("/devices", { method: "POST", body: JSON.stringify(body) }),
+  updateDevice: (mac, body) =>
+    request(`/devices/${mac}`, { method: "PATCH", body: JSON.stringify(body) }),
   assignProfile: (mac, templateId) =>
     request(`/devices/${mac}/assign-profile/${templateId}`, { method: "POST" }),
   importDevices: (file, fmt) => {

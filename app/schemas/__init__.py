@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -73,6 +74,17 @@ class DeviceCreate(BaseModel):
     label: str | None = None
 
 
+class DeviceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str | None = Field(default=None, max_length=255)
+    asset_tag: str | None = Field(default=None, max_length=128)
+    site_id: int | None = None
+    primary_group_id: int | None = None
+    config_profile_id: int | None = None
+    status: Literal["enrolled", "disabled", "retired"] | None = None
+
+
 class DeviceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -84,6 +96,8 @@ class DeviceOut(BaseModel):
     primary_group_id: int | None = None
     status: str
     label: str | None
+    asset_tag: str | None = None
+    config_profile_id: int | None = None
     last_seen_at: datetime | None
     last_checkin_at: datetime | None = None
     endpoint_ip: str | None = None
@@ -107,6 +121,7 @@ class DeviceInventoryOut(BaseModel):
     model: str
     serial: str | None = None
     label: str | None = None
+    asset_tag: str | None = None
     endpoint_ip: str | None = None
     proxy_ip: str | None = None
     software_version: str | None = None

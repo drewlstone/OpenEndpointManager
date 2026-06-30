@@ -4,12 +4,21 @@ import { api } from "../lib/api";
 import { endpointHref } from "../lib/endpoints";
 import { Empty, ErrorBanner, Loading, Modal, Toast, useFetch } from "../lib/ui.jsx";
 
+function formatTime(value) {
+  return value ? value.replace("T", " ").slice(0, 19) : "never";
+}
+
+function optionalNumber(value) {
+  return value ? Number(value) : null;
+}
+
 export default function DeviceDetail() {
   const { mac } = useParams();
   const { data: device, error, loading, reload } = useFetch(() => api.device(mac), [mac]);
   const checkins = useFetch(() => api.checkins(`?mac=${mac}&limit=20`), [mac]);
   const logs = useFetch(() => api.provisioningLogs(`?mac=${mac}&limit=20`), [mac]);
   const [showAssign, setShowAssign] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [toast, setToast] = useState(null);
 
   if (loading) return <Loading what="device" />;
@@ -26,7 +35,10 @@ export default function DeviceDetail() {
           <h1 className="mono">{device.mac}</h1>
           <div className="sub"><Link to="/devices">← All devices</Link></div>
         </div>
-        <button className="primary" onClick={() => setShowAssign(true)}>Assign config profile</button>
+        <div className="row" style={{ justifyContent: "flex-end" }}>
+          <button className="ghost" onClick={() => setShowEdit(true)}>Edit device</button>
+          <button className="primary" onClick={() => setShowAssign(true)}>Assign config profile</button>
+        </div>
       </div>
 
       <div className="card">
@@ -37,14 +49,17 @@ export default function DeviceDetail() {
           <dt>Software</dt><dd>{device.software_version || "—"}</dd>
           <dt>Serial</dt><dd>{device.serial || "—"}</dd>
           <dt>Label</dt><dd>{device.label || "—"}</dd>
+          <dt>Asset Tag</dt><dd>{device.asset_tag || "—"}</dd>
           <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
           <dt>Site ID</dt><dd>{device.site_id ?? "—"}</dd>
-          <dt>Status</dt><dd>{device.status}</dd>
+          <dt>Primary Group ID</dt><dd>{device.primary_group_id ?? "—"}</dd>
+          <dt>Config Profile ID</dt><dd>{device.config_profile_id ?? "—"}</dd>
+          <dt>Administrative Lifecycle</dt><dd>{device.status}</dd>
           <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
           <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
           <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
           <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
-          <dt>Last check-in</dt><dd>{(device.last_checkin_at || device.last_seen_at) ? (device.last_checkin_at || device.last_seen_at).replace("T", " ").slice(0, 19) : "never"}</dd>
+          <dt>Last check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
         </dl>
       </div>
 
@@ -92,12 +107,117 @@ export default function DeviceDetail() {
         ) : <Empty>No provisioning requests logged.</Empty>}
       </div>
 
+      {showEdit && (
+        <EditDevice device={device} onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); reload(); setToast({ msg: "Device updated", kind: "ok" }); }} />
+      )}
       {showAssign && (
         <AssignProfile mac={mac} onClose={() => setShowAssign(false)}
           onSaved={() => { setShowAssign(false); reload(); setToast({ msg: "Profile assigned", kind: "ok" }); }} />
       )}
       <Toast message={toast?.msg} kind={toast?.kind} onDone={() => setToast(null)} />
     </div>
+  );
+}
+
+function EditDevice({ device, onClose, onSaved }) {
+  const tenantQuery = `?tenant_id=${encodeURIComponent(device.tenant_id)}`;
+  const sites = useFetch(() => api.sites(tenantQuery), [device.tenant_id]);
+  const groups = useFetch(() => api.groups(tenantQuery), [device.tenant_id]);
+  const templates = useFetch(() => api.templates(), []);
+  const [form, setForm] = useState({
+    label: device.label || "",
+    asset_tag: device.asset_tag || "",
+    site_id: device.site_id ? String(device.site_id) : "",
+    primary_group_id: device.primary_group_id ? String(device.primary_group_id) : "",
+    config_profile_id: device.config_profile_id ? String(device.config_profile_id) : "",
+    status: device.status || "enrolled",
+  });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  function update(patch) {
+    setForm((current) => ({ ...current, ...patch }));
+  }
+
+  async function save() {
+    setBusy(true); setError(null);
+    try {
+      await api.updateDevice(device.mac, {
+        label: form.label || null,
+        asset_tag: form.asset_tag || null,
+        site_id: optionalNumber(form.site_id),
+        primary_group_id: optionalNumber(form.primary_group_id),
+        config_profile_id: optionalNumber(form.config_profile_id),
+        status: form.status,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Edit device" onClose={onClose}>
+      <ErrorBanner error={error || sites.error || groups.error || templates.error} />
+
+      <h3>Editable Administrative Settings</h3>
+      <div className="field"><label>Label / Friendly Name</label>
+        <input value={form.label} onChange={(e) => update({ label: e.target.value })} /></div>
+      <div className="field"><label>Asset Tag</label>
+        <input value={form.asset_tag} onChange={(e) => update({ asset_tag: e.target.value })} /></div>
+      <div className="field">
+        <label>Site</label>
+        <select value={form.site_id} onChange={(e) => update({ site_id: e.target.value })} disabled={sites.loading}>
+          <option value="">No site</option>
+          {sites.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      <div className="row">
+        <div className="field">
+          <label>Primary Group</label>
+          <select value={form.primary_group_id} onChange={(e) => update({ primary_group_id: e.target.value })} disabled={groups.loading}>
+            <option value="">No group</option>
+            {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Config Profile / Template</label>
+          <select value={form.config_profile_id} onChange={(e) => update({ config_profile_id: e.target.value })} disabled={templates.loading}>
+            <option value="">No explicit profile</option>
+            {templates.data?.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.scope})</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="field">
+        <label>Administrative Lifecycle</label>
+        <select value={form.status} onChange={(e) => update({ status: e.target.value })}>
+          <option value="enrolled">enrolled</option>
+          <option value="disabled">disabled</option>
+          <option value="retired">retired</option>
+        </select>
+      </div>
+
+      <h3>Read-only Device Identity</h3>
+      <dl className="kv" style={{ marginBottom: 18 }}>
+        <dt>MAC</dt><dd>{device.mac}</dd>
+        <dt>Serial</dt><dd>{device.serial || "—"}</dd>
+        <dt>Model</dt><dd>{device.model}</dd>
+        <dt>Software</dt><dd>{device.software_version || "—"}</dd>
+        <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
+        <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
+        <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
+        <dt>Last check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
+        <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+      </dl>
+
+      <div className="modal-actions">
+        <button className="ghost" onClick={onClose}>Cancel</button>
+        <button className="primary" onClick={save} disabled={busy}>Save</button>
+      </div>
+    </Modal>
   );
 }
 
