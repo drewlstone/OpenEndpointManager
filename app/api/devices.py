@@ -96,6 +96,8 @@ DEVICE_SORTS = {
     "endpoint_ip": Device.endpoint_ip,
     "software_version": Device.software_version,
     "reachability_status": Device.reachability_status,
+    "network_reachability_status": Device.network_reachability_status,
+    "web_reachability_status": Device.web_reachability_status,
     "provisioning_health": Device.provisioning_health,
 }
 
@@ -155,6 +157,16 @@ async def list_devices(
             Device.reachability_method.label("reachability_method"),
             Device.reachability_latency_ms.label("reachability_latency_ms"),
             Device.reachability_error.label("reachability_error"),
+            func.coalesce(Device.network_reachability_status, literal("unknown")).label("network_reachability_status"),
+            Device.network_reachability_method.label("network_reachability_method"),
+            Device.network_reachability_error.label("network_reachability_error"),
+            Device.network_latency_ms.label("network_latency_ms"),
+            Device.network_checked_at.label("network_checked_at"),
+            func.coalesce(Device.web_reachability_status, literal("unknown")).label("web_reachability_status"),
+            Device.web_reachability_method.label("web_reachability_method"),
+            Device.web_reachability_error.label("web_reachability_error"),
+            Device.web_latency_ms.label("web_latency_ms"),
+            Device.web_checked_at.label("web_checked_at"),
             func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
             Device.identity_checked_at.label("identity_checked_at"),
             func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
@@ -251,6 +263,16 @@ async def get_device(
             Device.reachability_method.label("reachability_method"),
             Device.reachability_latency_ms.label("reachability_latency_ms"),
             Device.reachability_error.label("reachability_error"),
+            func.coalesce(Device.network_reachability_status, literal("unknown")).label("network_reachability_status"),
+            Device.network_reachability_method.label("network_reachability_method"),
+            Device.network_reachability_error.label("network_reachability_error"),
+            Device.network_latency_ms.label("network_latency_ms"),
+            Device.network_checked_at.label("network_checked_at"),
+            func.coalesce(Device.web_reachability_status, literal("unknown")).label("web_reachability_status"),
+            Device.web_reachability_method.label("web_reachability_method"),
+            Device.web_reachability_error.label("web_reachability_error"),
+            Device.web_latency_ms.label("web_latency_ms"),
+            Device.web_checked_at.label("web_checked_at"),
             func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
             Device.identity_checked_at.label("identity_checked_at"),
             func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
@@ -292,13 +314,29 @@ async def probe_device(
     device.probe_source = "manual"
     await db.flush()
 
-    probe = await probe_endpoint(device.endpoint_ip, settings.health_probe_timeout_seconds)
+    probe = await probe_endpoint(
+        device.endpoint_ip,
+        settings.health_probe_timeout_seconds,
+        settings.health_probe_icmp_enabled,
+        settings.health_probe_icmp_command,
+        settings.health_probe_icmp_timeout_seconds,
+    )
     completed_at = datetime.now(timezone.utc)
     device.reachability_status = probe.reachability_status
     device.reachability_checked_at = completed_at
-    device.reachability_method = probe.method
-    device.reachability_latency_ms = probe.latency_ms
-    device.reachability_error = probe.error
+    device.reachability_method = probe.web_reachability_method or probe.network_reachability_method
+    device.reachability_latency_ms = probe.web_latency_ms or probe.network_latency_ms
+    device.reachability_error = probe.web_reachability_error or probe.network_reachability_error
+    device.network_reachability_status = probe.network_reachability_status
+    device.network_reachability_method = probe.network_reachability_method
+    device.network_reachability_error = probe.network_reachability_error
+    device.network_latency_ms = probe.network_latency_ms
+    device.network_checked_at = completed_at
+    device.web_reachability_status = probe.web_reachability_status
+    device.web_reachability_method = probe.web_reachability_method
+    device.web_reachability_error = probe.web_reachability_error
+    device.web_latency_ms = probe.web_latency_ms
+    device.web_checked_at = completed_at
     device.identity_confidence = probe.identity_confidence
     device.identity_checked_at = completed_at
     device.last_probe_completed_at = completed_at

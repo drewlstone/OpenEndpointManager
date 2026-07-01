@@ -16,6 +16,16 @@ function formatLatency(value) {
   return value === null || value === undefined ? "—" : `${value} ms`;
 }
 
+function formatHealth(value, kind) {
+  const normalized = value || "unknown";
+  if (normalized === "reachable") return "Reachable";
+  if (normalized === "refused") return kind === "web" ? "Closed/Refused" : "Refused";
+  if (normalized === "timeout") return "Timeout";
+  if (normalized === "unreachable") return "Unreachable";
+  if (normalized === "not_checked") return "Not Checked";
+  return "Unknown";
+}
+
 function namedValue(name, id, empty = "—") {
   if (name) return name;
   if (id) return `#${id}`;
@@ -106,11 +116,15 @@ export default function DeviceDetail() {
           <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
           <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
           <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
-          <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+          <dt>Network Reachability</dt><dd>{formatHealth(device.network_reachability_status, "network")}</dd>
+          <dt>Network Method</dt><dd>{device.network_reachability_method || "—"}</dd>
+          <dt>Network Latency</dt><dd>{formatLatency(device.network_latency_ms)}</dd>
+          <dt>Network Error</dt><dd>{device.network_reachability_error || "—"}</dd>
+          <dt>Web UI Reachability</dt><dd>{formatHealth(device.web_reachability_status, "web")}</dd>
+          <dt>Web Method</dt><dd>{device.web_reachability_method || "—"}</dd>
+          <dt>Web Latency</dt><dd>{formatLatency(device.web_latency_ms)}</dd>
+          <dt>Web Error</dt><dd>{device.web_reachability_error || "—"}</dd>
           <dt>Last Probe</dt><dd>{formatTime(device.last_probe_completed_at || device.reachability_checked_at)}</dd>
-          <dt>Method</dt><dd>{device.reachability_method || "—"}</dd>
-          <dt>Latency</dt><dd>{formatLatency(device.reachability_latency_ms)}</dd>
-          <dt>Error</dt><dd>{device.reachability_error || "—"}</dd>
           <dt>Provisioning Health</dt><dd>{device.provisioning_health || "unknown"}</dd>
           <dt>Identity Confidence</dt><dd>{device.identity_confidence || "unknown"}</dd>
           <dt>Last Check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
@@ -263,7 +277,8 @@ function EditDevice({ device, onClose, onSaved }) {
         <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
         <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
         <dt>Last check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
-        <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+        <dt>Network Reachability</dt><dd>{formatHealth(device.network_reachability_status, "network")}</dd>
+        <dt>Web UI Reachability</dt><dd>{formatHealth(device.web_reachability_status, "web")}</dd>
       </dl>
 
       <div className="modal-actions">

@@ -63,6 +63,20 @@ class Device(Base):
     reachability_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     reachability_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reachability_error: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    network_reachability_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    network_reachability_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    network_reachability_error: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    network_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    network_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    web_reachability_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    web_reachability_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    web_reachability_error: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    web_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    web_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     identity_confidence: Mapped[str] = mapped_column(String(32), default="unknown")
     identity_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -89,6 +103,8 @@ class Device(Base):
         Index("ix_device_last_checkin", "last_checkin_at"),
         Index("ix_device_endpoint_ip", "endpoint_ip"),
         Index("ix_device_reachability_status", "reachability_status"),
+        Index("ix_device_network_reachability_status", "network_reachability_status"),
+        Index("ix_device_web_reachability_status", "web_reachability_status"),
         Index("ix_device_next_probe_at", "next_probe_at"),
         Index("ix_device_provisioning_health", "provisioning_health"),
         Index("ix_device_firmware_target", "firmware_target_id"),
