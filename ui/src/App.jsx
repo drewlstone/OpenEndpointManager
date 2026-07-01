@@ -59,6 +59,16 @@ const NAV = [
   { to: "/health", label: "System Health" },
 ];
 
+function principalLabel(user) {
+  if (!user) return "";
+  if (user.display_name || user.email || user.name) {
+    return user.display_name || user.email || user.name;
+  }
+  if (user.kind === "user" && user.id) return `user #${user.id}`;
+  if (user.kind === "api_key" && user.id) return `API key #${user.id}`;
+  return user.kind || "authenticated";
+}
+
 function Shell({ children }) {
   const { user, logout } = useAuth();
   const nav = useNavigate();
@@ -83,7 +93,7 @@ function Shell({ children }) {
         <header className="topbar">
           <FleetStrip />
           <div className="userbox">
-            <span>{user?.kind === "user" ? user?.id && `user #${user.id}` : user?.kind}</span>
+            <span>{principalLabel(user)}</span>
             <button className="ghost" onClick={() => { logout(); nav("/login"); }}>Sign out</button>
           </div>
         </header>

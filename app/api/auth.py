@@ -13,7 +13,8 @@ from app.core.security import (
     generate_api_key,
     verify_password,
 )
-from app.models.admin import AdminUser, ApiKey
+from app.models.admin import AdminUser, ApiKey, Role, UserRole
+from app.models.org import Tenant
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -54,13 +55,50 @@ async def refresh(refresh_token: str, db: AsyncSession = Depends(get_db)) -> Tok
 
 
 @router.get("/me")
-async def me(principal: Principal = Depends(get_principal)) -> dict:
-    return {
+async def me(
+    principal: Principal = Depends(get_principal),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    tenant_name = None
+    if principal.tenant_id is not None:
+        tenant = await db.get(Tenant, principal.tenant_id)
+        tenant_name = tenant.name if tenant else None
+
+    base = {
         "kind": principal.kind,
         "id": principal.id,
         "tenant_id": principal.tenant_id,
+        "tenant_name": tenant_name,
         "permissions": sorted(principal.permissions),
     }
+
+    if principal.kind == "user":
+        user = await db.get(AdminUser, int(principal.id))
+        if user is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "inactive user")
+        role_rows = await db.execute(
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user.id)
+        )
+        return {
+            **base,
+            "email": user.email,
+            "display_name": user.email,
+            "roles": list(role_rows.scalars().all()),
+        }
+
+    if principal.kind == "api_key":
+        api_key = await db.get(ApiKey, int(principal.id))
+        name = api_key.name if api_key else None
+        return {
+            **base,
+            "name": name,
+            "display_name": f"API key: {name}" if name else f"API key #{principal.id}",
+            "roles": [],
+        }
+
+    return {**base, "display_name": principal.kind, "roles": []}
 
 
 @router.post("/api-keys", response_model=ApiKeyCreated)
