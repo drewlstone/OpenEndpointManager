@@ -7,8 +7,11 @@ updates device.last_seen_at in a single pass.
 """
 from __future__ import annotations
 
+import asyncio
 import json
-from datetime import datetime
+import logging
+import time
+from datetime import datetime, timedelta, timezone
 
 import redis
 from celery import Celery
@@ -17,6 +20,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.discovery import is_poly_provisioning_user_agent, parse_poly_user_agent
+from app.services.health_probe import probe_endpoint
+from app.services.health_state import probe_failure_update_values, probe_result_update_values
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery("polyprov", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.beat_schedule = {
@@ -33,6 +40,11 @@ celery_app.conf.beat_schedule = {
         "schedule": 3600.0,
     },
 }
+if settings.health_probe_scheduler_enabled:
+    celery_app.conf.beat_schedule["schedule-health-probes"] = {
+        "task": "app.worker.schedule_health_probes",
+        "schedule": settings.health_probe_schedule_seconds,
+    }
 
 _sync_engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
 _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
@@ -53,6 +65,162 @@ def device_checkin_telemetry(batch_item: dict) -> dict[str, str | None]:
         "software_version": details.firmware_version,
         "h": batch_item.get("config_hash"),
     }
+
+
+def _claim_due_health_probes() -> list[dict]:
+    now = datetime.now(timezone.utc)
+    claim_until = now + timedelta(seconds=settings.health_probe_claim_timeout_seconds)
+    with Session(_sync_engine) as session:
+        with session.begin():
+            rows = session.execute(
+                text(
+                    "SELECT id, mac, endpoint_ip, probe_attempts "
+                    "FROM device "
+                    "WHERE status = 'enrolled' "
+                    "AND endpoint_ip IS NOT NULL "
+                    "AND (next_probe_at IS NULL OR next_probe_at <= :now) "
+                    "ORDER BY next_probe_at NULLS FIRST, id "
+                    "LIMIT :limit "
+                    "FOR UPDATE SKIP LOCKED"
+                ),
+                {"now": now, "limit": settings.health_probe_batch_size},
+            ).mappings().all()
+            devices = [dict(row) for row in rows]
+            if devices:
+                session.execute(
+                    text(
+                        "UPDATE device SET "
+                        "last_probe_started_at = :started_at, "
+                        "probe_source = 'scheduled', "
+                        "next_probe_at = :claim_until "
+                        "WHERE id = :id"
+                    ),
+                    [
+                        {
+                            "id": device["id"],
+                            "started_at": now,
+                            "claim_until": claim_until,
+                        }
+                        for device in devices
+                    ],
+                )
+    return devices
+
+
+async def _probe_scheduled_devices(devices: list[dict]) -> list[dict]:
+    semaphore = asyncio.Semaphore(max(1, settings.health_probe_concurrency))
+
+    async def run_probe(device: dict) -> dict:
+        async with semaphore:
+            completed_at = None
+            try:
+                probe = await probe_endpoint(
+                    device["endpoint_ip"],
+                    settings.health_probe_timeout_seconds,
+                    settings.health_probe_icmp_enabled,
+                    settings.health_probe_icmp_command,
+                    settings.health_probe_icmp_timeout_seconds,
+                )
+                completed_at = datetime.now(timezone.utc)
+                updates = probe_result_update_values(
+                    probe,
+                    completed_at,
+                    settings.health_probe_interval_seconds,
+                    settings.health_probe_jitter_seconds,
+                    device.get("probe_attempts") or 0,
+                    "scheduled",
+                )
+                return {"id": device["id"], "ok": True, "updates": updates}
+            except Exception as exc:
+                completed_at = completed_at or datetime.now(timezone.utc)
+                error = exc.__class__.__name__.lower()
+                updates = probe_failure_update_values(
+                    error,
+                    completed_at,
+                    settings.health_probe_interval_seconds,
+                    settings.health_probe_jitter_seconds,
+                    device.get("probe_attempts") or 0,
+                    "scheduled",
+                )
+                return {"id": device["id"], "ok": False, "updates": updates}
+
+    return await asyncio.gather(*(run_probe(device) for device in devices))
+
+
+def _persist_health_probe_updates(results: list[dict]) -> None:
+    if not results:
+        return
+    update_sql = text(
+        "UPDATE device SET "
+        "reachability_status = :reachability_status, "
+        "reachability_checked_at = :reachability_checked_at, "
+        "reachability_method = :reachability_method, "
+        "reachability_latency_ms = :reachability_latency_ms, "
+        "reachability_error = :reachability_error, "
+        "network_reachability_status = :network_reachability_status, "
+        "network_reachability_method = :network_reachability_method, "
+        "network_reachability_error = :network_reachability_error, "
+        "network_latency_ms = :network_latency_ms, "
+        "network_checked_at = :network_checked_at, "
+        "web_reachability_status = :web_reachability_status, "
+        "web_reachability_method = :web_reachability_method, "
+        "web_reachability_error = :web_reachability_error, "
+        "web_latency_ms = :web_latency_ms, "
+        "web_checked_at = :web_checked_at, "
+        "identity_confidence = :identity_confidence, "
+        "identity_checked_at = :identity_checked_at, "
+        "last_probe_completed_at = :last_probe_completed_at, "
+        "last_probe_duration_ms = :last_probe_duration_ms, "
+        "next_probe_at = :next_probe_at, "
+        "probe_attempts = :probe_attempts, "
+        "probe_source = :probe_source "
+        "WHERE id = :id"
+    )
+    with Session(_sync_engine) as session:
+        session.execute(
+            update_sql,
+            [{"id": result["id"], **result["updates"]} for result in results],
+        )
+        session.commit()
+
+
+@celery_app.task(name="app.worker.schedule_health_probes")
+def schedule_health_probes() -> dict:
+    started = time.perf_counter()
+    if not settings.health_probe_scheduler_enabled:
+        return {
+            "claimed": 0,
+            "probed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "duration_ms": 0,
+            "enabled": False,
+        }
+
+    devices = _claim_due_health_probes()
+    if not devices:
+        return {
+            "claimed": 0,
+            "probed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+            "enabled": True,
+        }
+
+    results = asyncio.run(_probe_scheduled_devices(devices))
+    _persist_health_probe_updates(results)
+    failed = sum(1 for result in results if not result["ok"])
+    summary = {
+        "claimed": len(devices),
+        "probed": len(results) - failed,
+        "skipped": 0,
+        "failed": failed,
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+        "enabled": True,
+    }
+    logger.info("scheduled health probes completed: %s", summary)
+    return summary
 
 
 @celery_app.task(name="app.worker.flush_checkins")

@@ -125,6 +125,8 @@ export default function DeviceDetail() {
           <dt>Web Latency</dt><dd>{formatLatency(device.web_latency_ms)}</dd>
           <dt>Web Error</dt><dd>{device.web_reachability_error || "—"}</dd>
           <dt>Last Probe</dt><dd>{formatTime(device.last_probe_completed_at || device.reachability_checked_at)}</dd>
+          <dt>Next Probe</dt><dd>{formatTime(device.next_probe_at)}</dd>
+          <dt>Probe Source</dt><dd>{device.probe_source || "—"}</dd>
           <dt>Provisioning Health</dt><dd>{device.provisioning_health || "unknown"}</dd>
           <dt>Identity Confidence</dt><dd>{device.identity_confidence || "unknown"}</dd>
           <dt>Last Check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>

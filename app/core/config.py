@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     health_probe_icmp_enabled: bool = True
     health_probe_icmp_command: str = "ping"
     health_probe_icmp_timeout_seconds: float = 1.0
+    health_probe_scheduler_enabled: bool = True
+    health_probe_schedule_seconds: float = 60.0
+    health_probe_claim_timeout_seconds: int = 300
 
     cors_origins: list[str] = ["*"]
 

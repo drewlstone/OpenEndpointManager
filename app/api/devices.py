@@ -22,6 +22,7 @@ from app.models.org import DeviceGroup, Site, Tenant
 from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut, DeviceUpdate
 from app.services.device_import import import_devices
 from app.services.health_probe import probe_endpoint
+from app.services.health_state import probe_result_update_values
 from app.core.config import settings
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -32,6 +33,12 @@ def _clean_optional_string(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _aware_utc(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
 
 
 def _display_model(model: str | None) -> str | None:
@@ -309,8 +316,22 @@ async def probe_device(
     if device is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
 
-    started_at = datetime.now(timezone.utc)
-    device.last_probe_started_at = started_at
+    now = datetime.now(timezone.utc)
+    claim_started_after = now - timedelta(seconds=settings.health_probe_claim_timeout_seconds)
+    last_probe_started_at = _aware_utc(device.last_probe_started_at)
+    last_probe_completed_at = _aware_utc(device.last_probe_completed_at)
+    probe_in_progress = (
+        last_probe_started_at is not None
+        and last_probe_started_at > claim_started_after
+        and (
+            last_probe_completed_at is None
+            or last_probe_started_at > last_probe_completed_at
+        )
+    )
+    if probe_in_progress:
+        raise HTTPException(status.HTTP_409_CONFLICT, "probe already in progress")
+
+    device.last_probe_started_at = now
     device.probe_source = "manual"
     await db.flush()
 
@@ -322,27 +343,16 @@ async def probe_device(
         settings.health_probe_icmp_timeout_seconds,
     )
     completed_at = datetime.now(timezone.utc)
-    device.reachability_status = probe.reachability_status
-    device.reachability_checked_at = completed_at
-    device.reachability_method = probe.web_reachability_method or probe.network_reachability_method
-    device.reachability_latency_ms = probe.web_latency_ms or probe.network_latency_ms
-    device.reachability_error = probe.web_reachability_error or probe.network_reachability_error
-    device.network_reachability_status = probe.network_reachability_status
-    device.network_reachability_method = probe.network_reachability_method
-    device.network_reachability_error = probe.network_reachability_error
-    device.network_latency_ms = probe.network_latency_ms
-    device.network_checked_at = completed_at
-    device.web_reachability_status = probe.web_reachability_status
-    device.web_reachability_method = probe.web_reachability_method
-    device.web_reachability_error = probe.web_reachability_error
-    device.web_latency_ms = probe.web_latency_ms
-    device.web_checked_at = completed_at
-    device.identity_confidence = probe.identity_confidence
-    device.identity_checked_at = completed_at
-    device.last_probe_completed_at = completed_at
-    device.last_probe_duration_ms = probe.duration_ms
-    device.next_probe_at = completed_at + timedelta(seconds=settings.health_probe_interval_seconds)
-    device.probe_attempts = 0 if probe.reachability_status == "reachable" else device.probe_attempts + 1
+    updates = probe_result_update_values(
+        probe,
+        completed_at,
+        settings.health_probe_interval_seconds,
+        settings.health_probe_jitter_seconds,
+        device.probe_attempts,
+        "manual",
+    )
+    for field, value in updates.items():
+        setattr(device, field, value)
     await db.flush()
 
     return await get_device(norm, db, _)
