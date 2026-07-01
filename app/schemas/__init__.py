@@ -124,6 +124,7 @@ class DeviceInventoryOut(BaseModel):
     primary_group_name: str | None = None
     mac: str
     model: str
+    model_display: str | None = None
     serial: str | None = None
     label: str | None = None
     asset_tag: str | None = None

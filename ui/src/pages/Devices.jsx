@@ -127,7 +127,7 @@ export default function Devices() {
                 return (
                   <tr key={d.id}>
                     <td className="mono"><Link to={`/devices/${d.mac}`}>{d.mac}</Link></td>
-                    <td className="mono">{d.model}</td>
+                    <td className="mono">{d.model_display || d.model}</td>
                     <td className="mono muted">{d.software_version || "—"}</td>
                     <td className="mono muted">{d.serial || "—"}</td>
                     <td>{d.label || <span className="muted">—</span>}</td>

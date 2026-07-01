@@ -43,6 +43,19 @@ def _display_model(model: str | None) -> str | None:
     return normalized.replace("_", " ")
 
 
+def _model_search_terms(value: str) -> set[str]:
+    normalized = value.strip()
+    if not normalized:
+        return set()
+
+    terms = {normalized, normalized.replace(" ", "_")}
+    parts = normalized.split(maxsplit=1)
+    if len(parts) == 2:
+        family, model = parts
+        terms.add(f"{family}-{family}_{model.replace(' ', '_')}")
+    return terms
+
+
 @router.post("", response_model=DeviceOut, status_code=201)
 async def create_device(
     req: DeviceCreate,
@@ -158,10 +171,14 @@ async def list_devices(
     if q:
         term = f"%{q.strip()}%"
         mac_term = f"%{q.replace(':', '').replace('-', '').lower()}%"
+        model_filters = [
+            Device.model.ilike(f"%{model_term}%")
+            for model_term in _model_search_terms(q)
+        ]
         stmt = stmt.where(
             or_(
                 Device.mac.ilike(mac_term),
-                Device.model.ilike(term),
+                *model_filters,
                 Device.serial.ilike(term),
                 Device.label.ilike(term),
                 Device.asset_tag.ilike(term),
@@ -183,7 +200,10 @@ async def list_devices(
     order_expr = sort_expr.desc() if direction == "desc" else sort_expr.asc()
     stmt = stmt.order_by(order_expr.nullslast(), Device.id).limit(limit).offset(offset)
     result = await db.execute(stmt)
-    return [dict(row) for row in result.mappings().all()]
+    devices = [dict(row) for row in result.mappings().all()]
+    for device in devices:
+        device["model_display"] = _display_model(device["model"])
+    return devices
 
 
 @router.get("/{mac}", response_model=DeviceOut)
