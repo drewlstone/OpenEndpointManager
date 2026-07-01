@@ -89,15 +89,20 @@ class DeviceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     tenant_id: int
+    tenant_name: str | None = None
     mac: str
     model: str
+    model_display: str | None = None
     serial: str | None = None
     site_id: int | None
+    site_name: str | None = None
     primary_group_id: int | None = None
+    primary_group_name: str | None = None
     status: str
     label: str | None
     asset_tag: str | None = None
     config_profile_id: int | None = None
+    config_profile_name: str | None = None
     last_seen_at: datetime | None
     last_checkin_at: datetime | None = None
     endpoint_ip: str | None = None

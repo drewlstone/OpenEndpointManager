@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -27,6 +28,19 @@ def _clean_optional_string(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _display_model(model: str | None) -> str | None:
+    if not model:
+        return model
+    normalized = model.strip()
+    if not normalized:
+        return None
+
+    match = re.match(r"^([A-Za-z0-9]+)-\1_(.+)$", normalized)
+    if match:
+        return f"{match.group(1)} {match.group(2).replace('_', ' ')}"
+    return normalized.replace("_", " ")
 
 
 @router.post("", response_model=DeviceOut, status_code=201)
@@ -177,12 +191,46 @@ async def get_device(
     mac: str,
     db: AsyncSession = Depends(get_db),
     _: Principal = Depends(require_permission("device:read")),
-) -> Device:
+) -> dict:
     norm = normalize_mac(mac)
-    result = await db.execute(select(Device).where(Device.mac == norm))
-    device = result.scalar_one_or_none()
-    if device is None:
+    result = await db.execute(
+        select(
+            Device.id.label("id"),
+            Device.tenant_id.label("tenant_id"),
+            Tenant.name.label("tenant_name"),
+            Device.site_id.label("site_id"),
+            Site.name.label("site_name"),
+            Device.primary_group_id.label("primary_group_id"),
+            DeviceGroup.name.label("primary_group_name"),
+            Device.mac.label("mac"),
+            Device.model.label("model"),
+            Device.serial.label("serial"),
+            Device.status.label("status"),
+            Device.label.label("label"),
+            Device.asset_tag.label("asset_tag"),
+            Device.config_profile_id.label("config_profile_id"),
+            ConfigTemplate.name.label("config_profile_name"),
+            Device.last_seen_at.label("last_seen_at"),
+            Device.last_checkin_at.label("last_checkin_at"),
+            Device.endpoint_ip.label("endpoint_ip"),
+            Device.proxy_ip.label("proxy_ip"),
+            Device.software_version.label("software_version"),
+            func.coalesce(Device.reachability_status, literal("unknown")).label("reachability_status"),
+            Device.reachability_checked_at.label("reachability_checked_at"),
+            func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
+            func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
+        )
+        .join(Tenant, Tenant.id == Device.tenant_id)
+        .outerjoin(Site, Site.id == Device.site_id)
+        .outerjoin(DeviceGroup, DeviceGroup.id == Device.primary_group_id)
+        .outerjoin(ConfigTemplate, ConfigTemplate.id == Device.config_profile_id)
+        .where(Device.mac == norm)
+    )
+    row = result.mappings().one_or_none()
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
+    device = dict(row)
+    device["model_display"] = _display_model(device["model"])
     return device
 
 

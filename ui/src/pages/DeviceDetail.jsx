@@ -12,6 +12,12 @@ function optionalNumber(value) {
   return value ? Number(value) : null;
 }
 
+function namedValue(name, id, empty = "—") {
+  if (name) return name;
+  if (id) return `#${id}`;
+  return empty;
+}
+
 export default function DeviceDetail() {
   const { mac } = useParams();
   const { data: device, error, loading, reload } = useFetch(() => api.device(mac), [mac]);
@@ -25,6 +31,8 @@ export default function DeviceDetail() {
   if (error) return <ErrorBanner error={error} />;
   if (!device) return <Empty>Device not found.</Empty>;
 
+  const title = device.label || device.mac;
+  const displayModel = device.model_display || device.model;
   const httpEndpoint = endpointHref(device.endpoint_ip, "http");
   const httpsEndpoint = endpointHref(device.endpoint_ip, "https");
 
@@ -32,8 +40,11 @@ export default function DeviceDetail() {
     <div>
       <div className="page-head">
         <div>
-          <h1 className="mono">{device.mac}</h1>
-          <div className="sub"><Link to="/devices">← All devices</Link></div>
+          <h1>{title}</h1>
+          <div className="sub">
+            {displayModel || "Unknown model"} <span className="muted">·</span> <span className="mono">{device.mac}</span>
+            <span className="muted"> · </span><Link to="/devices">All devices</Link>
+          </div>
         </div>
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <button className="ghost" onClick={() => setShowEdit(true)}>Edit device</button>
@@ -42,31 +53,46 @@ export default function DeviceDetail() {
       </div>
 
       <div className="card">
-        <h2>Device</h2>
+        <h2>Identity</h2>
         <dl className="kv">
+          <dt>Friendly Name</dt><dd>{device.label || "—"}</dd>
           <dt>MAC</dt><dd>{device.mac}</dd>
-          <dt>Model</dt><dd>{device.model}</dd>
-          <dt>Software</dt><dd>{device.software_version || "—"}</dd>
           <dt>Serial</dt><dd>{device.serial || "—"}</dd>
-          <dt>Label</dt><dd>{device.label || "—"}</dd>
-          <dt>Asset Tag</dt><dd>{device.asset_tag || "—"}</dd>
-          <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
-          <dt>Site ID</dt><dd>{device.site_id ?? "—"}</dd>
-          <dt>Primary Group ID</dt><dd>{device.primary_group_id ?? "—"}</dd>
-          <dt>Config Profile ID</dt><dd>{device.config_profile_id ?? "—"}</dd>
-          <dt>Administrative Lifecycle</dt><dd>{device.status}</dd>
-          <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
-          <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
-          <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
-          <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
-          <dt>Last check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
+          <dt>Model</dt><dd>{displayModel || "—"}</dd>
+          <dt>Software</dt><dd>{device.software_version || "—"}</dd>
         </dl>
       </div>
 
       <div className="card">
-        <h2>Recent check-ins</h2>
+        <h2>Administrative Configuration</h2>
+        <dl className="kv">
+          <dt>Tenant</dt><dd>{namedValue(device.tenant_name, device.tenant_id)}</dd>
+          <dt>Site</dt><dd>{namedValue(device.site_name, device.site_id)}</dd>
+          <dt>Primary Group</dt><dd>{namedValue(device.primary_group_name, device.primary_group_id)}</dd>
+          <dt>Config Profile</dt><dd>{namedValue(device.config_profile_name, device.config_profile_id)}</dd>
+          <dt>Asset Tag</dt><dd>{device.asset_tag || "—"}</dd>
+          <dt>Lifecycle</dt><dd>{device.status}</dd>
+        </dl>
+      </div>
+
+      <div className="card">
+        <h2>Current State</h2>
+        <dl className="kv">
+          <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
+          <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
+          <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
+          <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+          <dt>Provisioning Health</dt><dd>{device.provisioning_health || "unknown"}</dd>
+          <dt>Identity Confidence</dt><dd>{device.identity_confidence || "unknown"}</dd>
+          <dt>Last Check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
+        </dl>
+      </div>
+
+      <div className="card">
+        <h2>Recent Activity</h2>
+        <h3>Recent check-ins</h3>
         {checkins.loading ? <Loading /> : checkins.data?.length ? (
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ marginBottom: 18 }}>
             <table>
               <thead><tr><th>Time</th><th>Endpoint IP</th><th>Proxy IP</th><th>User agent</th><th>Config hash</th></tr></thead>
               <tbody>
@@ -83,10 +109,8 @@ export default function DeviceDetail() {
             </table>
           </div>
         ) : <Empty>No check-ins recorded for this device.</Empty>}
-      </div>
 
-      <div className="card">
-        <h2>Provisioning requests</h2>
+        <h3>Provisioning requests</h3>
         {logs.loading ? <Loading /> : logs.data?.length ? (
           <div className="table-wrap">
             <table>
@@ -204,9 +228,9 @@ function EditDevice({ device, onClose, onSaved }) {
       <dl className="kv" style={{ marginBottom: 18 }}>
         <dt>MAC</dt><dd>{device.mac}</dd>
         <dt>Serial</dt><dd>{device.serial || "—"}</dd>
-        <dt>Model</dt><dd>{device.model}</dd>
+        <dt>Model</dt><dd>{device.model_display || device.model}</dd>
         <dt>Software</dt><dd>{device.software_version || "—"}</dd>
-        <dt>Tenant ID</dt><dd>{device.tenant_id}</dd>
+        <dt>Tenant</dt><dd>{namedValue(device.tenant_name, device.tenant_id)}</dd>
         <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
         <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
         <dt>Last check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>
