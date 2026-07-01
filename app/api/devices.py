@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import csv
 import io
 import re
@@ -19,6 +21,8 @@ from app.models.device import Device
 from app.models.org import DeviceGroup, Site, Tenant
 from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut, DeviceUpdate
 from app.services.device_import import import_devices
+from app.services.health_probe import probe_endpoint
+from app.core.config import settings
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -147,8 +151,15 @@ async def list_devices(
             Device.last_seen_at.label("last_seen_at"),
             last_checkin_at.label("last_checkin_at"),
             func.coalesce(Device.reachability_status, literal("unknown")).label("reachability_status"),
+            Device.reachability_checked_at.label("reachability_checked_at"),
+            Device.reachability_method.label("reachability_method"),
+            Device.reachability_latency_ms.label("reachability_latency_ms"),
+            Device.reachability_error.label("reachability_error"),
             func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
+            Device.identity_checked_at.label("identity_checked_at"),
             func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
+            Device.last_probe_completed_at.label("last_probe_completed_at"),
+            Device.last_probe_duration_ms.label("last_probe_duration_ms"),
         )
         .join(Tenant, Tenant.id == Device.tenant_id)
         .outerjoin(Site, Site.id == Device.site_id)
@@ -237,8 +248,18 @@ async def get_device(
             Device.software_version.label("software_version"),
             func.coalesce(Device.reachability_status, literal("unknown")).label("reachability_status"),
             Device.reachability_checked_at.label("reachability_checked_at"),
+            Device.reachability_method.label("reachability_method"),
+            Device.reachability_latency_ms.label("reachability_latency_ms"),
+            Device.reachability_error.label("reachability_error"),
             func.coalesce(Device.identity_confidence, literal("unknown")).label("identity_confidence"),
+            Device.identity_checked_at.label("identity_checked_at"),
             func.coalesce(Device.provisioning_health, literal("unknown")).label("provisioning_health"),
+            Device.last_probe_started_at.label("last_probe_started_at"),
+            Device.last_probe_completed_at.label("last_probe_completed_at"),
+            Device.last_probe_duration_ms.label("last_probe_duration_ms"),
+            Device.next_probe_at.label("next_probe_at"),
+            Device.probe_attempts.label("probe_attempts"),
+            Device.probe_source.label("probe_source"),
         )
         .join(Tenant, Tenant.id == Device.tenant_id)
         .outerjoin(Site, Site.id == Device.site_id)
@@ -252,6 +273,41 @@ async def get_device(
     device = dict(row)
     device["model_display"] = _display_model(device["model"])
     return device
+
+
+@router.post("/{mac}/probe", response_model=DeviceOut)
+async def probe_device(
+    mac: str,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_permission("device:write")),
+) -> dict:
+    norm = normalize_mac(mac)
+    result = await db.execute(select(Device).where(Device.mac == norm))
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
+
+    started_at = datetime.now(timezone.utc)
+    device.last_probe_started_at = started_at
+    device.probe_source = "manual"
+    await db.flush()
+
+    probe = await probe_endpoint(device.endpoint_ip, settings.health_probe_timeout_seconds)
+    completed_at = datetime.now(timezone.utc)
+    device.reachability_status = probe.reachability_status
+    device.reachability_checked_at = completed_at
+    device.reachability_method = probe.method
+    device.reachability_latency_ms = probe.latency_ms
+    device.reachability_error = probe.error
+    device.identity_confidence = probe.identity_confidence
+    device.identity_checked_at = completed_at
+    device.last_probe_completed_at = completed_at
+    device.last_probe_duration_ms = probe.duration_ms
+    device.next_probe_at = completed_at + timedelta(seconds=settings.health_probe_interval_seconds)
+    device.probe_attempts = 0 if probe.reachability_status == "reachable" else device.probe_attempts + 1
+    await db.flush()
+
+    return await get_device(norm, db, _)
 
 
 @router.patch("/{mac}", response_model=DeviceOut)

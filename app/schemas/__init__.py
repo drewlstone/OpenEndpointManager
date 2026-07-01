@@ -110,8 +110,18 @@ class DeviceOut(BaseModel):
     software_version: str | None = None
     reachability_status: str = "unknown"
     reachability_checked_at: datetime | None = None
+    reachability_method: str | None = None
+    reachability_latency_ms: int | None = None
+    reachability_error: str | None = None
     identity_confidence: str = "unknown"
+    identity_checked_at: datetime | None = None
     provisioning_health: str = "unknown"
+    last_probe_started_at: datetime | None = None
+    last_probe_completed_at: datetime | None = None
+    last_probe_duration_ms: int | None = None
+    next_probe_at: datetime | None = None
+    probe_attempts: int = 0
+    probe_source: str | None = None
 
 
 class DeviceInventoryOut(BaseModel):
@@ -136,8 +146,15 @@ class DeviceInventoryOut(BaseModel):
     last_seen_at: datetime | None
     last_checkin_at: datetime | None = None
     reachability_status: str = "unknown"
+    reachability_checked_at: datetime | None = None
+    reachability_method: str | None = None
+    reachability_latency_ms: int | None = None
+    reachability_error: str | None = None
     identity_confidence: str = "unknown"
+    identity_checked_at: datetime | None = None
     provisioning_health: str = "unknown"
+    last_probe_completed_at: datetime | None = None
+    last_probe_duration_ms: int | None = None
 
 
 class DeviceImportResult(BaseModel):

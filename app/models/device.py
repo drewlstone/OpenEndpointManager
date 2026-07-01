@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -59,8 +60,26 @@ class Device(Base):
     reachability_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    reachability_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reachability_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reachability_error: Mapped[str | None] = mapped_column(String(128), nullable=True)
     identity_confidence: Mapped[str] = mapped_column(String(32), default="unknown")
+    identity_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     provisioning_health: Mapped[str] = mapped_column(String(32), default="unknown")
+    last_probe_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_probe_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_probe_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_probe_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    probe_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    probe_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -70,6 +89,7 @@ class Device(Base):
         Index("ix_device_last_checkin", "last_checkin_at"),
         Index("ix_device_endpoint_ip", "endpoint_ip"),
         Index("ix_device_reachability_status", "reachability_status"),
+        Index("ix_device_next_probe_at", "next_probe_at"),
         Index("ix_device_provisioning_health", "provisioning_health"),
         Index("ix_device_firmware_target", "firmware_target_id"),
     )

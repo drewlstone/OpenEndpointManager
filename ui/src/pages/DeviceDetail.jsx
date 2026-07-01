@@ -12,6 +12,10 @@ function optionalNumber(value) {
   return value ? Number(value) : null;
 }
 
+function formatLatency(value) {
+  return value === null || value === undefined ? "—" : `${value} ms`;
+}
+
 function namedValue(name, id, empty = "—") {
   if (name) return name;
   if (id) return `#${id}`;
@@ -25,6 +29,7 @@ export default function DeviceDetail() {
   const logs = useFetch(() => api.provisioningLogs(`?mac=${mac}&limit=20`), [mac]);
   const [showAssign, setShowAssign] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [probing, setProbing] = useState(false);
   const [toast, setToast] = useState(null);
 
   if (loading) return <Loading what="device" />;
@@ -35,6 +40,19 @@ export default function DeviceDetail() {
   const displayModel = device.model_display || device.model;
   const httpEndpoint = endpointHref(device.endpoint_ip, "http");
   const httpsEndpoint = endpointHref(device.endpoint_ip, "https");
+
+  async function probeNow() {
+    setProbing(true);
+    try {
+      await api.probeDevice(device.mac);
+      reload();
+      setToast({ msg: "Probe completed", kind: "ok" });
+    } catch (err) {
+      setToast({ msg: err.message, kind: "bad" });
+    } finally {
+      setProbing(false);
+    }
+  }
 
   return (
     <div>
@@ -76,12 +94,23 @@ export default function DeviceDetail() {
       </div>
 
       <div className="card">
-        <h2>Current State</h2>
+        <div className="row" style={{ alignItems: "center", marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>Current State</h2>
+          <div style={{ flex: "0 0 auto", marginLeft: "auto" }}>
+            <button className="ghost" onClick={probeNow} disabled={probing}>
+              {probing ? "Probing…" : "Probe Now"}
+            </button>
+          </div>
+        </div>
         <dl className="kv">
           <dt>Endpoint IP</dt><dd>{device.endpoint_ip || "—"}</dd>
           <dt>Web UI</dt><dd>{httpEndpoint ? <><a href={httpEndpoint} target="_blank" rel="noreferrer">Open HTTP</a><span className="muted"> · </span><a href={httpsEndpoint} target="_blank" rel="noreferrer">Open HTTPS</a></> : "—"}</dd>
           <dt>Proxy IP</dt><dd>{device.proxy_ip || "—"}</dd>
           <dt>Reachability</dt><dd>{device.reachability_status || "unknown"}</dd>
+          <dt>Last Probe</dt><dd>{formatTime(device.last_probe_completed_at || device.reachability_checked_at)}</dd>
+          <dt>Method</dt><dd>{device.reachability_method || "—"}</dd>
+          <dt>Latency</dt><dd>{formatLatency(device.reachability_latency_ms)}</dd>
+          <dt>Error</dt><dd>{device.reachability_error || "—"}</dd>
           <dt>Provisioning Health</dt><dd>{device.provisioning_health || "unknown"}</dd>
           <dt>Identity Confidence</dt><dd>{device.identity_confidence || "unknown"}</dd>
           <dt>Last Check-in</dt><dd>{formatTime(device.last_checkin_at || device.last_seen_at)}</dd>

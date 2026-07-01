@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # Rate limiting (per-MAC, requests per window)
     rate_limit_per_minute: int = 30
 
+    # Active health probing
+    health_probe_interval_seconds: int = 900
+    health_probe_timeout_seconds: float = 2.5
+    health_probe_jitter_seconds: int = 300
+    health_probe_batch_size: int = 100
+    health_probe_concurrency: int = 25
+
     cors_origins: list[str] = ["*"]
 
 
