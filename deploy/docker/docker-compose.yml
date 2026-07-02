@@ -51,6 +51,7 @@ services:
       DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: dev-secret-not-for-production
+      HEALTH_PROBE_ICMP_ENABLED: "false"
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -72,6 +73,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://polyprov:polyprov@db:5432/polyprov
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: dev-secret-not-for-production
+      HEALTH_PROBE_ICMP_ENABLED: "false"
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -93,6 +95,7 @@ services:
     environment:
       DATABASE_URL_SYNC: postgresql+psycopg2://polyprov:polyprov@db:5432/polyprov
       REDIS_URL: redis://redis:6379/0
+      HEALTH_PROBE_ICMP_ENABLED: "false"
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

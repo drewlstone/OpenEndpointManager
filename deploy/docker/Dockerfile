@@ -7,9 +7,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System deps for psycopg2 / asyncpg builds
+# System deps for psycopg2 / asyncpg builds and optional ICMP health probing
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
+    build-essential libpq-dev curl iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

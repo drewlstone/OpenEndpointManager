@@ -18,13 +18,18 @@ function lifecycleStatus(d) {
   return { cls: value === "disabled" ? "bad" : "info", text: value };
 }
 
-function healthStatus(value, kind) {
+function healthStatus(value, kind, error) {
   const normalized = value || "unknown";
   if (normalized === "reachable") return { cls: "ok", text: "Reachable" };
   if (normalized === "refused") return { cls: "warn", text: kind === "web" ? "Closed" : "Refused" };
   if (normalized === "timeout") return { cls: "warn", text: "Timeout" };
   if (normalized === "unreachable") return { cls: "bad", text: "Unreachable" };
   if (normalized === "not_checked") return { cls: "", text: "Not Checked" };
+  if (kind === "network") {
+    if (error === "icmp_disabled") return { cls: "", text: "ICMP Disabled" };
+    if (error === "icmp_unavailable") return { cls: "", text: "ICMP Unavailable" };
+    if (error === "icmp_not_permitted") return { cls: "", text: "ICMP Not Permitted" };
+  }
   return { cls: "", text: "Unknown" };
 }
 
@@ -126,8 +131,8 @@ export default function Devices() {
               {data.map((d) => {
                 const lifecycle = lifecycleStatus(d);
                 const checkin = checkinStatus(d);
-                const network = healthStatus(d.network_reachability_status, "network");
-                const web = healthStatus(d.web_reachability_status, "web");
+                const network = healthStatus(d.network_reachability_status, "network", d.network_reachability_error);
+                const web = healthStatus(d.web_reachability_status, "web", d.web_reachability_error);
                 const endpoint = endpointHref(d.endpoint_ip);
                 return (
                   <tr key={d.id}>

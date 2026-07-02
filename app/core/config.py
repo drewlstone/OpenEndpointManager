@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     health_probe_jitter_seconds: int = 300
     health_probe_batch_size: int = 100
     health_probe_concurrency: int = 25
-    health_probe_icmp_enabled: bool = True
+    health_probe_icmp_enabled: bool = False
     health_probe_icmp_command: str = "ping"
     health_probe_icmp_timeout_seconds: float = 1.0
     health_probe_scheduler_enabled: bool = True
