@@ -85,6 +85,23 @@ class DeviceUpdate(BaseModel):
     status: Literal["enrolled", "disabled", "retired"] | None = None
 
 
+class HealthEngineRuntimeOut(BaseModel):
+    health_probe_scheduler_enabled: bool | None = None
+    health_probe_icmp_enabled: bool | None = None
+    health_probe_interval_seconds: int | None = None
+    health_probe_timeout_seconds: float | None = None
+    health_probe_batch_size: int | None = None
+    health_probe_concurrency: int | None = None
+    health_probe_jitter_seconds: int | None = None
+    worker_connected: bool
+    beat_connected: bool
+    redis_connected: bool
+    worker_hostnames: list[str] = Field(default_factory=list)
+    celery_worker_version: str | None = None
+    scheduler_last_run: datetime | None = None
+    scheduler_next_run: datetime | None = None
+
+
 class ProbeQueued(BaseModel):
     mac: str
     status: Literal["queued"] = "queued"

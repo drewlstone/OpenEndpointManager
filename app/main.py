@@ -12,6 +12,7 @@ from app.api import auth as auth_router
 from app.api import devices as devices_router
 from app.api import discovery as discovery_router
 from app.api import reports as reports_router
+from app.api import ops as ops_router
 from app.api import users as users_router
 from app.core.config import settings
 from app.core.db import engine
@@ -46,6 +47,7 @@ if PLANE in ("all", "admin"):
     app.include_router(discovery_router.router, prefix="/api/v1")
     app.include_router(admin_router.router, prefix="/api/v1")
     app.include_router(reports_router.router, prefix="/api/v1")
+    app.include_router(ops_router.router, prefix="/api/v1")
     app.include_router(users_router.router, prefix="/api/v1")
 
 if PLANE in ("all", "provisioning"):

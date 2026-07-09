@@ -93,6 +93,7 @@ export const api = {
   provisioningLogs: (q = "") => request(`/reports/provisioning-logs${q}`),
   checkins: (q = "") => request(`/reports/checkins${q}`),
   errors: () => request("/reports/errors"),
+  healthEngine: () => request("/ops/health-engine"),
   discoveries: (q = "") => request(`/discoveries${q}`),
   approveDiscovery: (id, body) =>
     request(`/discoveries/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),

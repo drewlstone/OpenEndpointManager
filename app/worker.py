@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import platform
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.health_engine import HEALTH_SCHEDULER_LAST_RUN_KEY
 from app.services.discovery import is_poly_provisioning_user_agent, parse_poly_user_agent
 from app.services.health_probe import probe_endpoint
 from app.services.health_state import probe_failure_update_values, probe_result_update_values
@@ -47,6 +49,30 @@ if settings.health_probe_scheduler_enabled:
 
 _sync_engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
 _sync_redis = redis.from_url(settings.redis_url, decode_responses=False)
+
+
+
+def _health_engine_runtime_config() -> dict:
+    return {
+        "health_probe_scheduler_enabled": settings.health_probe_scheduler_enabled,
+        "health_probe_icmp_enabled": settings.health_probe_icmp_enabled,
+        "health_probe_interval_seconds": settings.health_probe_interval_seconds,
+        "health_probe_timeout_seconds": settings.health_probe_timeout_seconds,
+        "health_probe_batch_size": settings.health_probe_batch_size,
+        "health_probe_concurrency": settings.health_probe_concurrency,
+        "health_probe_jitter_seconds": settings.health_probe_jitter_seconds,
+        "health_probe_schedule_seconds": settings.health_probe_schedule_seconds,
+        "health_probe_claim_timeout_seconds": settings.health_probe_claim_timeout_seconds,
+    }
+
+
+def _record_scheduler_run() -> str:
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        _sync_redis.set(HEALTH_SCHEDULER_LAST_RUN_KEY, now, ex=86400)
+    except Exception:
+        logger.exception("failed to record health scheduler run")
+    return now
 
 
 def is_device_provisioning_request(user_agent: str | None) -> bool:
@@ -196,9 +222,18 @@ def _persist_health_probe_updates(results: list[dict]) -> None:
         session.commit()
 
 
+@celery_app.task(name="app.worker.health_engine_runtime")
+def health_engine_runtime() -> dict:
+    return {
+        **_health_engine_runtime_config(),
+        "hostname": platform.node(),
+    }
+
+
 @celery_app.task(name="app.worker.schedule_health_probes")
 def schedule_health_probes() -> dict:
     started = time.perf_counter()
+    scheduler_run_at = _record_scheduler_run()
     if not settings.health_probe_scheduler_enabled:
         return {
             "claimed": 0,
@@ -207,6 +242,7 @@ def schedule_health_probes() -> dict:
             "failed": 0,
             "duration_ms": 0,
             "enabled": False,
+            "scheduler_run_at": scheduler_run_at,
         }
 
     devices = _claim_due_health_probes()
@@ -218,6 +254,7 @@ def schedule_health_probes() -> dict:
             "failed": 0,
             "duration_ms": int((time.perf_counter() - started) * 1000),
             "enabled": True,
+            "scheduler_run_at": scheduler_run_at,
         }
 
     results = asyncio.run(_probe_devices(devices, "scheduled"))
@@ -230,6 +267,7 @@ def schedule_health_probes() -> dict:
         "failed": failed,
         "duration_ms": int((time.perf_counter() - started) * 1000),
         "enabled": True,
+        "scheduler_run_at": scheduler_run_at,
     }
     logger.info("scheduled health probes completed: %s", summary)
     return summary
