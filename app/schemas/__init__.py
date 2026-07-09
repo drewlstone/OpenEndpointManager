@@ -102,6 +102,55 @@ class HealthEngineRuntimeOut(BaseModel):
     scheduler_next_run: datetime | None = None
 
 
+class ProvisioningReadinessAttention(BaseModel):
+    severity: Literal["info", "warning", "critical"]
+    code: str
+    label: str
+
+
+class ProvisioningReadinessFleet(BaseModel):
+    total_devices: int
+    enrolled: int
+    disabled: int
+    retired: int
+    pending_discoveries: int
+    recent_checkins_15m: int
+    stale_24h: int
+
+
+class ProvisioningReadinessProvisioning(BaseModel):
+    requests_15m: int
+    requests_1h: int
+    errors_15m: int
+    errors_1h: int
+    error_rate_15m: float | None = None
+    cache_hits_15m: int
+    cache_misses_15m: int
+    cache_hit_ratio_15m: float | None = None
+
+
+class ProvisioningReadinessBuffers(BaseModel):
+    checkin_buffer_depth: int | None = None
+    discovery_buffer_depth: int | None = None
+
+
+class ProvisioningReadinessRuntime(BaseModel):
+    db_connected: bool
+    redis_connected: bool
+    worker_connected: bool
+    beat_connected: bool
+
+
+class ProvisioningReadinessOut(BaseModel):
+    generated_at: datetime
+    status: Literal["ready", "warning", "critical"]
+    fleet: ProvisioningReadinessFleet
+    provisioning: ProvisioningReadinessProvisioning
+    buffers: ProvisioningReadinessBuffers
+    runtime: ProvisioningReadinessRuntime
+    attention: list[ProvisioningReadinessAttention] = Field(default_factory=list)
+
+
 class ProbeQueued(BaseModel):
     mac: str
     status: Literal["queued"] = "queued"

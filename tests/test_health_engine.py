@@ -22,6 +22,13 @@ class FakeRedis:
             raise RuntimeError("redis down")
         return self.value
 
+    async def llen(self, key):
+        if self.fail:
+            raise RuntimeError("redis down")
+        if key.endswith("discovery:buffer"):
+            return 2
+        return 7
+
 
 def _client():
     app.dependency_overrides[get_principal] = lambda: Principal(
@@ -93,3 +100,94 @@ def test_health_engine_runtime_handles_disconnected_worker_and_redis(monkeypatch
     assert body["redis_connected"] is False
     assert body["health_probe_icmp_enabled"] is None
     assert body["health_probe_interval_seconds"] is None
+
+def _readiness_aggregates():
+    return {
+        "fleet": {
+            "total_devices": 75000,
+            "enrolled": 74900,
+            "disabled": 75,
+            "retired": 25,
+            "pending_discoveries": 3,
+            "recent_checkins_15m": 70000,
+            "stale_24h": 5,
+        },
+        "provisioning": {
+            "requests_15m": 1000,
+            "requests_1h": 4000,
+            "errors_15m": 2,
+            "errors_1h": 4,
+            "error_rate_15m": 0.002,
+            "cache_hits_15m": 990,
+            "cache_misses_15m": 10,
+            "cache_hit_ratio_15m": 0.99,
+        },
+    }
+
+
+def test_provisioning_readiness_reports_summary(monkeypatch):
+    last_run = datetime.now(timezone.utc)
+
+    async def fake_aggregates(db, principal, now):
+        return True, _readiness_aggregates()
+
+    monkeypatch.setattr(ops, "_readiness_db_aggregates", fake_aggregates)
+    monkeypatch.setattr(ops, "redis_client", FakeRedis(last_run.isoformat().encode()))
+    monkeypatch.setattr(ops, "_celery_worker_status", lambda: (True, ["celery@worker-1"], "5.4.0"))
+    monkeypatch.setattr(
+        ops,
+        "_worker_runtime_config",
+        lambda: {"health_probe_schedule_seconds": 60, "hostname": "worker-1"},
+    )
+
+    res = _client().get("/api/v1/ops/provisioning-readiness")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "warning"
+    assert body["fleet"]["total_devices"] == 75000
+    assert body["fleet"]["recent_checkins_15m"] == 70000
+    assert body["provisioning"]["requests_15m"] == 1000
+    assert body["provisioning"]["cache_hit_ratio_15m"] == 0.99
+    assert body["buffers"]["checkin_buffer_depth"] == 7
+    assert body["buffers"]["discovery_buffer_depth"] == 2
+    assert body["runtime"] == {
+        "db_connected": True,
+        "redis_connected": True,
+        "worker_connected": True,
+        "beat_connected": True,
+    }
+    assert {item["code"] for item in body["attention"]} >= {
+        "stale_devices",
+        "pending_discoveries",
+        "provisioning_errors",
+    }
+    assert "redis://" not in res.text
+
+
+def test_provisioning_readiness_reports_critical_runtime(monkeypatch):
+    async def fake_aggregates(db, principal, now):
+        return False, _readiness_aggregates()
+
+    monkeypatch.setattr(ops, "_readiness_db_aggregates", fake_aggregates)
+    monkeypatch.setattr(ops, "redis_client", FakeRedis(fail=True))
+    monkeypatch.setattr(ops, "_celery_worker_status", lambda: (False, [], None))
+
+    res = _client().get("/api/v1/ops/provisioning-readiness")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "critical"
+    assert body["buffers"]["checkin_buffer_depth"] is None
+    assert body["runtime"] == {
+        "db_connected": False,
+        "redis_connected": False,
+        "worker_connected": False,
+        "beat_connected": False,
+    }
+    assert {item["code"] for item in body["attention"]} >= {
+        "db_disconnected",
+        "redis_disconnected",
+        "worker_disconnected",
+        "beat_disconnected",
+    }

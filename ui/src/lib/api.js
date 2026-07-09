@@ -94,6 +94,7 @@ export const api = {
   checkins: (q = "") => request(`/reports/checkins${q}`),
   errors: () => request("/reports/errors"),
   healthEngine: () => request("/ops/health-engine"),
+  provisioningReadiness: () => request("/ops/provisioning-readiness"),
   discoveries: (q = "") => request(`/discoveries${q}`),
   approveDiscovery: (id, body) =>
     request(`/discoveries/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
