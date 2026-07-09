@@ -43,7 +43,7 @@ function connectionBadge(connected) {
 
 function enabledBadge(enabled) {
   if (enabled === true) return <StatusBadge status="ok">Enabled</StatusBadge>;
-  if (enabled === false) return <StatusBadge status="warn">Disabled</StatusBadge>;
+  if (enabled === false) return <StatusBadge status="info">Configured Off</StatusBadge>;
   return <StatusBadge status="bad">Unknown</StatusBadge>;
 }
 

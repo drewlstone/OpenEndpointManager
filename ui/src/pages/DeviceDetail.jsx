@@ -24,7 +24,7 @@ function formatHealth(value, kind, error) {
   if (normalized === "unreachable") return "Unreachable";
   if (normalized === "not_checked") return "Not Checked";
   if (kind === "network") {
-    if (error === "icmp_disabled") return "Unknown: ICMP disabled";
+    if (error === "icmp_disabled") return "Not checked: ICMP disabled";
     if (error === "icmp_unavailable") return "Unknown: ICMP unavailable";
     if (error === "icmp_not_permitted") return "Unknown: ICMP not permitted";
   }
@@ -171,6 +171,11 @@ export default function DeviceDetail() {
           <dt>Network Method</dt><dd>{device.network_reachability_method || "—"}</dd>
           <dt>Network Latency</dt><dd>{formatLatency(device.network_latency_ms)}</dd>
           <dt>Network Error</dt><dd>{device.network_reachability_error || "—"}</dd>
+          {device.network_reachability_error === "icmp_disabled" && (
+            <>
+              <dt>Network Note</dt><dd>Network Reachability requires ICMP to be enabled in Health Engine runtime configuration.</dd>
+            </>
+          )}
           <dt>Web UI Reachability</dt><dd>{formatHealth(device.web_reachability_status, "web", device.web_reachability_error)}</dd>
           <dt>Web Method</dt><dd>{device.web_reachability_method || "—"}</dd>
           <dt>Web Latency</dt><dd>{formatLatency(device.web_latency_ms)}</dd>
