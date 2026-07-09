@@ -74,3 +74,76 @@ def test_device_checkin_telemetry_handles_unparseable_version():
     assert telemetry["software_version"] is None
     assert telemetry["ip"] == "192.0.2.10"
     assert telemetry["proxy_ip"] is None
+
+
+
+def test_probe_device_now_persists_manual_source(monkeypatch):
+    from app import worker
+
+    persisted = []
+
+    async def fake_probe_devices(devices, source):
+        assert devices == [{"id": 7, "mac": "0004f2112233", "endpoint_ip": "192.0.2.10", "probe_attempts": 1}]
+        assert source == "manual"
+        return [{"id": 7, "ok": True, "updates": {"probe_source": source}}]
+
+    monkeypatch.setattr(
+        worker,
+        "_load_manual_probe_device",
+        lambda mac: {
+            "id": 7,
+            "mac": mac,
+            "endpoint_ip": "192.0.2.10",
+            "probe_attempts": 1,
+        },
+    )
+    monkeypatch.setattr(worker, "_probe_devices", fake_probe_devices)
+    monkeypatch.setattr(worker, "_persist_health_probe_updates", lambda results: persisted.extend(results))
+
+    summary = worker.probe_device_now("0004f2112233")
+
+    assert summary["probed"] == 1
+    assert summary["failed"] == 0
+    assert persisted == [{"id": 7, "ok": True, "updates": {"probe_source": "manual"}}]
+
+
+def test_probe_devices_uses_requested_source(monkeypatch):
+    import asyncio
+
+    from app import worker
+    from app.services.health_probe import HealthProbeResult
+
+    async def fake_probe_endpoint(*args, **kwargs):
+        return HealthProbeResult(
+            reachability_status="reachable",
+            identity_confidence="unknown",
+            network_reachability_status="unknown",
+            network_reachability_method=None,
+            network_reachability_error="icmp_disabled",
+            network_latency_ms=None,
+            web_reachability_status="reachable",
+            web_reachability_method="http_head",
+            web_reachability_error=None,
+            web_latency_ms=12,
+            duration_ms=34,
+        )
+
+    monkeypatch.setattr(worker, "probe_endpoint", fake_probe_endpoint)
+
+    manual = asyncio.run(
+        worker._probe_devices(
+            [{"id": 1, "endpoint_ip": "192.0.2.10", "probe_attempts": 0}],
+            "manual",
+        )
+    )
+    scheduled = asyncio.run(
+        worker._probe_devices(
+            [{"id": 2, "endpoint_ip": "192.0.2.11", "probe_attempts": 0}],
+            "scheduled",
+        )
+    )
+
+    assert manual[0]["updates"]["probe_source"] == "manual"
+    assert scheduled[0]["updates"]["probe_source"] == "scheduled"
+    assert manual[0]["updates"]["next_probe_at"] > manual[0]["updates"]["last_probe_completed_at"]
+    assert scheduled[0]["updates"]["next_probe_at"] > scheduled[0]["updates"]["last_probe_completed_at"]

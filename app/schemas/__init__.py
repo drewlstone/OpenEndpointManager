@@ -85,6 +85,14 @@ class DeviceUpdate(BaseModel):
     status: Literal["enrolled", "disabled", "retired"] | None = None
 
 
+class ProbeQueued(BaseModel):
+    mac: str
+    status: Literal["queued"] = "queued"
+    probe_source: Literal["manual"] = "manual"
+    last_probe_started_at: datetime
+    next_probe_at: datetime
+
+
 class DeviceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

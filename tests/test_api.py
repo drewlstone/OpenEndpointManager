@@ -182,3 +182,133 @@ def test_firmware_register_and_assign_ring():
         "firmware_image_id": img["id"], "ring": "test",
     })
     assert r.status_code == 201
+
+
+def _login_superadmin(client):
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@example.com", "password": "changeme123"},
+    )
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _create_probe_device(client, auth, suffix, endpoint_ip="192.0.2.10"):
+    from sqlalchemy import create_engine, text
+
+    from app.core.config import settings
+
+    tenant = client.post(
+        "/api/v1/tenants",
+        json={"slug": f"probe-{suffix}", "name": f"Probe {suffix}"},
+        headers=auth,
+    )
+    assert tenant.status_code == 201
+    mac = "0004f2" + suffix[:6]
+    device = client.post(
+        "/api/v1/devices",
+        json={"tenant_id": tenant.json()["id"], "mac": mac, "model": "CCX"},
+        headers=auth,
+    )
+    assert device.status_code == 201
+    mac = device.json()["mac"]
+
+    engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE device SET endpoint_ip = :endpoint_ip WHERE mac = :mac"),
+            {"endpoint_ip": endpoint_ip, "mac": mac},
+        )
+    engine.dispose()
+    return mac
+
+
+@REQUIRES_STACK
+def test_manual_probe_returns_202_and_enqueues_worker(monkeypatch):
+    import uuid
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, text
+
+    from app.api import devices as devices_router
+    from app.core.config import settings
+    from app.main import app
+
+    client = TestClient(app)
+    auth = _login_superadmin(client)
+    mac = _create_probe_device(client, auth, uuid.uuid4().hex[:8])
+    sent = []
+
+    def fake_send_task(name, args):
+        sent.append((name, args))
+
+    monkeypatch.setattr(devices_router.celery_app, "send_task", fake_send_task)
+
+    r = client.post(f"/api/v1/devices/{mac}/probe", headers=auth)
+
+    assert r.status_code == 202
+    body = r.json()
+    assert body["mac"] == mac
+    assert body["status"] == "queued"
+    assert body["probe_source"] == "manual"
+    assert body["last_probe_started_at"]
+    assert body["next_probe_at"]
+    assert sent == [("app.worker.probe_device_now", [mac])]
+
+    engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT probe_source, last_probe_started_at, next_probe_at "
+                "FROM device WHERE mac = :mac"
+            ),
+            {"mac": mac},
+        ).mappings().one()
+    engine.dispose()
+
+    assert row["probe_source"] == "manual"
+    assert row["last_probe_started_at"] is not None
+    assert row["next_probe_at"] is not None
+
+
+@REQUIRES_STACK
+def test_manual_probe_duplicate_returns_409_without_enqueue(monkeypatch):
+    import uuid
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, text
+
+    from app.api import devices as devices_router
+    from app.core.config import settings
+    from app.main import app
+
+    client = TestClient(app)
+    auth = _login_superadmin(client)
+    mac = _create_probe_device(client, auth, uuid.uuid4().hex[:8])
+    sent = []
+
+    engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE device SET "
+                "last_probe_started_at = :started_at, "
+                "last_probe_completed_at = NULL, "
+                "probe_source = 'manual' "
+                "WHERE mac = :mac"
+            ),
+            {"started_at": datetime.now(timezone.utc), "mac": mac},
+        )
+    engine.dispose()
+
+    monkeypatch.setattr(
+        devices_router.celery_app,
+        "send_task",
+        lambda name, args: sent.append((name, args)),
+    )
+
+    r = client.post(f"/api/v1/devices/{mac}/probe", headers=auth)
+
+    assert r.status_code == 409
+    assert sent == []

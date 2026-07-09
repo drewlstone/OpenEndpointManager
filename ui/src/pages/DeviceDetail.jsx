@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { endpointHref } from "../lib/endpoints";
@@ -45,7 +45,51 @@ export default function DeviceDetail() {
   const [showAssign, setShowAssign] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [probing, setProbing] = useState(false);
+  const [queuedProbeStarted, setQueuedProbeStarted] = useState(null);
+  const [probePollDeadline, setProbePollDeadline] = useState(null);
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (!queuedProbeStarted || !probePollDeadline) return undefined;
+
+    let cancelled = false;
+    const startedMs = new Date(queuedProbeStarted).getTime();
+
+    async function pollProbe() {
+      try {
+        const current = await api.device(mac);
+        if (cancelled) return;
+
+        const completedMs = current.last_probe_completed_at
+          ? new Date(current.last_probe_completed_at).getTime()
+          : 0;
+        if (completedMs > startedMs) {
+          setQueuedProbeStarted(null);
+          setProbePollDeadline(null);
+          setProbing(false);
+          reload();
+          return;
+        }
+      } catch (_) {
+        // Keep polling until the timeout; transient refresh failures should not
+        // make the user submit duplicate probes.
+      }
+
+      if (!cancelled && Date.now() >= probePollDeadline) {
+        setQueuedProbeStarted(null);
+        setProbePollDeadline(null);
+        setProbing(false);
+        setToast({ msg: "Probe queued; refresh later", kind: "ok" });
+      }
+    }
+
+    const interval = setInterval(pollProbe, 2000);
+    pollProbe();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [mac, probePollDeadline, queuedProbeStarted]);
 
   if (loading) return <Loading what="device" />;
   if (error) return <ErrorBanner error={error} />;
@@ -59,13 +103,15 @@ export default function DeviceDetail() {
   async function probeNow() {
     setProbing(true);
     try {
-      await api.probeDevice(device.mac);
-      reload();
-      setToast({ msg: "Probe completed", kind: "ok" });
+      const queued = await api.probeDevice(device.mac);
+      setQueuedProbeStarted(queued.last_probe_started_at);
+      setProbePollDeadline(Date.now() + 300000);
+      setToast({ msg: "Probe queued", kind: "ok" });
     } catch (err) {
-      setToast({ msg: err.message, kind: "bad" });
-    } finally {
+      setQueuedProbeStarted(null);
+      setProbePollDeadline(null);
       setProbing(false);
+      setToast({ msg: err.message, kind: "bad" });
     }
   }
 
@@ -113,7 +159,7 @@ export default function DeviceDetail() {
           <h2 style={{ margin: 0 }}>Current State</h2>
           <div style={{ flex: "0 0 auto", marginLeft: "auto" }}>
             <button className="ghost" onClick={probeNow} disabled={probing}>
-              {probing ? "Probing…" : "Probe Now"}
+              {probing ? (queuedProbeStarted ? "Probe queued…" : "Queueing…") : "Probe Now"}
             </button>
           </div>
         </div>

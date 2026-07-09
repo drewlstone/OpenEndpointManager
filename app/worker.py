@@ -14,10 +14,10 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import redis
-from celery import Celery
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.services.discovery import is_poly_provisioning_user_agent, parse_poly_user_agent
 from app.services.health_probe import probe_endpoint
@@ -25,7 +25,6 @@ from app.services.health_state import probe_failure_update_values, probe_result_
 
 logger = logging.getLogger(__name__)
 
-celery_app = Celery("polyprov", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.beat_schedule = {
     "flush-checkins": {
         "task": "app.worker.flush_checkins",
@@ -107,7 +106,7 @@ def _claim_due_health_probes() -> list[dict]:
     return devices
 
 
-async def _probe_scheduled_devices(devices: list[dict]) -> list[dict]:
+async def _probe_devices(devices: list[dict], source: str) -> list[dict]:
     semaphore = asyncio.Semaphore(max(1, settings.health_probe_concurrency))
 
     async def run_probe(device: dict) -> dict:
@@ -128,7 +127,7 @@ async def _probe_scheduled_devices(devices: list[dict]) -> list[dict]:
                     settings.health_probe_interval_seconds,
                     settings.health_probe_jitter_seconds,
                     device.get("probe_attempts") or 0,
-                    "scheduled",
+                    source,
                 )
                 return {"id": device["id"], "ok": True, "updates": updates}
             except Exception as exc:
@@ -140,11 +139,24 @@ async def _probe_scheduled_devices(devices: list[dict]) -> list[dict]:
                     settings.health_probe_interval_seconds,
                     settings.health_probe_jitter_seconds,
                     device.get("probe_attempts") or 0,
-                    "scheduled",
+                    source,
                 )
                 return {"id": device["id"], "ok": False, "updates": updates}
 
     return await asyncio.gather(*(run_probe(device) for device in devices))
+
+
+def _load_manual_probe_device(mac: str) -> dict | None:
+    with Session(_sync_engine) as session:
+        row = session.execute(
+            text(
+                "SELECT id, mac, endpoint_ip, probe_attempts "
+                "FROM device "
+                "WHERE mac = :mac"
+            ),
+            {"mac": mac},
+        ).mappings().one_or_none()
+        return dict(row) if row is not None else None
 
 
 def _persist_health_probe_updates(results: list[dict]) -> None:
@@ -208,7 +220,7 @@ def schedule_health_probes() -> dict:
             "enabled": True,
         }
 
-    results = asyncio.run(_probe_scheduled_devices(devices))
+    results = asyncio.run(_probe_devices(devices, "scheduled"))
     _persist_health_probe_updates(results)
     failed = sum(1 for result in results if not result["ok"])
     summary = {
@@ -220,6 +232,34 @@ def schedule_health_probes() -> dict:
         "enabled": True,
     }
     logger.info("scheduled health probes completed: %s", summary)
+    return summary
+
+
+@celery_app.task(name="app.worker.probe_device_now")
+def probe_device_now(mac: str) -> dict:
+    started = time.perf_counter()
+    device = _load_manual_probe_device(mac)
+    if device is None:
+        return {
+            "mac": mac,
+            "probed": 0,
+            "failed": 0,
+            "skipped": 1,
+            "reason": "device_not_found",
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+        }
+
+    results = asyncio.run(_probe_devices([device], "manual"))
+    _persist_health_probe_updates(results)
+    failed = sum(1 for result in results if not result["ok"])
+    summary = {
+        "mac": mac,
+        "probed": len(results) - failed,
+        "failed": failed,
+        "skipped": 0,
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+    }
+    logger.info("manual health probe completed: %s", summary)
     return summary
 
 

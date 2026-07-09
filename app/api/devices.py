@@ -12,6 +12,7 @@ from sqlalchemy import func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal, require_permission
+from app.core.celery_app import celery_app
 from app.core.db import get_db
 from app.core.redis_client import bump_device_generation
 from app.core.security import normalize_mac
@@ -19,10 +20,15 @@ from app.models.admin import CheckinEvent
 from app.models.config import ConfigTemplate, TemplateScope
 from app.models.device import Device
 from app.models.org import DeviceGroup, Site, Tenant
-from app.schemas import DeviceCreate, DeviceImportResult, DeviceInventoryOut, DeviceOut, DeviceUpdate
+from app.schemas import (
+    DeviceCreate,
+    DeviceImportResult,
+    DeviceInventoryOut,
+    DeviceOut,
+    DeviceUpdate,
+    ProbeQueued,
+)
 from app.services.device_import import import_devices
-from app.services.health_probe import probe_endpoint
-from app.services.health_state import probe_result_update_values
 from app.core.config import settings
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -304,19 +310,26 @@ async def get_device(
     return device
 
 
-@router.post("/{mac}/probe", response_model=DeviceOut)
+@router.post(
+    "/{mac}/probe",
+    response_model=ProbeQueued,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def probe_device(
     mac: str,
     db: AsyncSession = Depends(get_db),
     _: Principal = Depends(require_permission("device:write")),
-) -> dict:
+) -> ProbeQueued:
     norm = normalize_mac(mac)
-    result = await db.execute(select(Device).where(Device.mac == norm))
+    result = await db.execute(select(Device).where(Device.mac == norm).with_for_update())
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
+    if not device.endpoint_ip:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "device has no endpoint IP")
 
     now = datetime.now(timezone.utc)
+    claim_until = now + timedelta(seconds=settings.health_probe_claim_timeout_seconds)
     claim_started_after = now - timedelta(seconds=settings.health_probe_claim_timeout_seconds)
     last_probe_started_at = _aware_utc(device.last_probe_started_at)
     last_probe_completed_at = _aware_utc(device.last_probe_completed_at)
@@ -333,29 +346,15 @@ async def probe_device(
 
     device.last_probe_started_at = now
     device.probe_source = "manual"
+    device.next_probe_at = claim_until
     await db.flush()
 
-    probe = await probe_endpoint(
-        device.endpoint_ip,
-        settings.health_probe_timeout_seconds,
-        settings.health_probe_icmp_enabled,
-        settings.health_probe_icmp_command,
-        settings.health_probe_icmp_timeout_seconds,
+    celery_app.send_task("app.worker.probe_device_now", args=[norm])
+    return ProbeQueued(
+        mac=norm,
+        last_probe_started_at=now,
+        next_probe_at=claim_until,
     )
-    completed_at = datetime.now(timezone.utc)
-    updates = probe_result_update_values(
-        probe,
-        completed_at,
-        settings.health_probe_interval_seconds,
-        settings.health_probe_jitter_seconds,
-        device.probe_attempts,
-        "manual",
-    )
-    for field, value in updates.items():
-        setattr(device, field, value)
-    await db.flush()
-
-    return await get_device(norm, db, _)
 
 
 @router.patch("/{mac}", response_model=DeviceOut)
