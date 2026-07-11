@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { api } from "./lib/api";
 import { Loading, useAuth } from "./lib/ui.jsx";
+import logo from "./assets/brand/openuc-manager-logo-cropped.png";
 
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -75,7 +76,7 @@ function Shell({ children }) {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">poly<span className="dot">·</span>prov</div>
+        <div className="sidebar-brand"><img src={logo} alt="OpenUC Manager" /></div>
         <nav>
           {NAV.map((item, i) =>
             item.section ? (

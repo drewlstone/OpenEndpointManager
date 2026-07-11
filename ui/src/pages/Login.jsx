@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ErrorBanner, useAuth } from "../lib/ui.jsx";
+import logo from "../assets/brand/openuc-manager-logo-cropped.png";
 
 export default function Login() {
   const { login } = useAuth();
@@ -27,7 +28,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand">poly<span className="dot">·</span>prov</div>
+        <img className="login-logo" src={logo} alt="OpenUC Manager" />
         <div className="tag">Device provisioning operations console</div>
         <ErrorBanner error={error} />
         <div className="field">
