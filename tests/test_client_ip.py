@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.provisioning.router import _client_ips
+from app.provisioning.router import _advertises_firmware, _client_ips
 
 
 def _request(peer, headers=None):
@@ -45,3 +45,12 @@ def test_direct_trusted_loopback_without_headers_has_no_proxy_ip():
 
     assert endpoint_ip == "127.0.0.1"
     assert proxy_ip is None
+
+
+def test_poly_firmware_advertisement_filename_classification():
+    mac = "64167fcc45ba"
+    assert _advertises_firmware(f"{mac}.cfg", mac)
+    assert not _advertises_firmware(f"{mac}-phone.cfg", mac)
+    assert not _advertises_firmware(f"{mac}-web.cfg", mac)
+    assert not _advertises_firmware(f"{mac}-license.cfg", mac)
+    assert not _advertises_firmware(f"{mac}-directory.xml", mac)

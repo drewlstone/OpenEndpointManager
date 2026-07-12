@@ -60,6 +60,14 @@ def _mac_from_filename(filename: str) -> str | None:
         return None
 
 
+def _advertises_firmware(filename: str, mac: str) -> bool:
+    return filename.lower() == f"{mac}.cfg"
+
+
+def _firmware_app_file_path(object_key: str) -> str:
+    return f"firmware/{object_key}"
+
+
 def _valid_ip(value: str | None) -> str | None:
     if not value:
         return None
@@ -183,8 +191,9 @@ async def get_config(
     device_gen = await get_device_generation(mac)
     generation = global_gen * 1_000_000 + device_gen
 
-    # We cache per (mac, path_type) — combine into the model slot of the key
-    cache_slot = f"{path_type}"
+    # Cache per requested file so <MAC>.cfg can advertise firmware while
+    # <MAC>-web.cfg remains non-advertising.
+    cache_slot = f"{path_type}:{filename.lower()}"
     key = config_cache_key(mac, cache_slot, generation)
 
     cached = await cache_get(key)
@@ -218,14 +227,25 @@ async def get_config(
     if path_type == "master":
         firmware = await resolve_firmware(db, device)
         app_path = (
-            f"{settings.provisioning_base_path}firmware/{firmware.object_key}"
+            _firmware_app_file_path(firmware.object_key)
             if firmware else None
         )
         body = render_master_config(
             mac, config_files=[f"{mac}.cfg"], app_file_path=app_path
         )
     else:
-        body = render_device_config(effective, mac)
+        if _advertises_firmware(filename, mac):
+            firmware = await resolve_firmware(db, device)
+            app_path = (
+                _firmware_app_file_path(firmware.object_key)
+                if firmware else None
+            )
+            if app_path:
+                body = render_master_config(mac, config_files=[], app_file_path=app_path)
+            else:
+                body = render_device_config(effective, mac)
+        else:
+            body = render_device_config(effective, mac)
 
     metrics.config_render_duration.observe(time.perf_counter() - render_start)
     await cache_set(key, body)

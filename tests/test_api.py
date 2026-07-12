@@ -184,6 +184,97 @@ def test_firmware_register_and_assign_ring():
     assert r.status_code == 201
 
 
+@REQUIRES_STACK
+def test_poly_mac_specific_configs_advertise_assigned_firmware():
+    import uuid
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    r = client.post("/api/v1/auth/login",
+                    json={"email": "admin@example.com", "password": "changeme123"})
+    auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    suffix = uuid.uuid4().hex[:8]
+    model = f"CCX600LAB-{suffix}"
+    mac = "0004f2" + uuid.uuid4().hex[:6]
+    object_key = "ccx/PVOS_CCX600_9_4_1_0508_release_sig/3111-49770-001.sip.ld"
+
+    r = client.post("/api/v1/tenants", json={"slug": f"fw-{suffix}", "name": "Firmware Test"}, headers=auth)
+    assert r.status_code == 201
+    tenant_id = r.json()["id"]
+
+    r = client.post("/api/v1/devices", json={"tenant_id": tenant_id, "mac": mac, "model": model}, headers=auth)
+    assert r.status_code == 201
+    mac = r.json()["mac"]
+
+    version = f"9.4.1-{suffix}"
+    r = client.post(
+        f"/api/v1/firmware?model={model}&version={version}&object_key={object_key}",
+        headers=auth,
+    )
+    assert r.status_code == 201
+    firmware_id = r.json()["id"]
+
+    r = client.post("/api/v1/firmware/assignments", headers=auth, json={
+        "scope": "model", "scope_ref": model,
+        "firmware_image_id": firmware_id, "ring": "test",
+    })
+    assert r.status_code == 201
+
+    expected = f'APP_FILE_PATH="firmware/{object_key}"'
+    r = client.get(f"/provisioning/{mac}.cfg")
+    assert r.status_code == 200
+    assert "<APPLICATION" in r.text
+    assert expected in r.text
+    assert 'CONFIG_FILES=""' in r.text
+
+    for path in (f"/provisioning/{mac}-phone.cfg", f"/provisioning/{mac}-web.cfg"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert "<PHONE_CONFIG>" in r.text
+        assert "APP_FILE_PATH=" not in r.text
+
+    r = client.get("/provisioning/000000000000.cfg")
+    assert r.status_code == 200
+    assert "APP_FILE_PATH=" not in r.text
+
+    r = client.get("/provisioning/0004f2ffffff.cfg")
+    assert r.status_code == 404
+
+
+@REQUIRES_STACK
+def test_poly_mac_specific_config_omits_firmware_without_assignment():
+    import uuid
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    r = client.post("/api/v1/auth/login",
+                    json={"email": "admin@example.com", "password": "changeme123"})
+    auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    suffix = uuid.uuid4().hex[:8]
+    model = f"NOFW-{suffix}"
+    mac = "0004f2" + uuid.uuid4().hex[:6]
+
+    r = client.post("/api/v1/tenants", json={"slug": f"nofw-{suffix}", "name": "No Firmware Test"}, headers=auth)
+    assert r.status_code == 201
+    tenant_id = r.json()["id"]
+
+    r = client.post("/api/v1/devices", json={"tenant_id": tenant_id, "mac": mac, "model": model}, headers=auth)
+    assert r.status_code == 201
+    mac = r.json()["mac"]
+
+    for path in (f"/provisioning/{mac}.cfg", f"/provisioning/{mac}-phone.cfg"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert "APP_FILE_PATH=" not in r.text
+
+
+
 def _login_superadmin(client):
     r = client.post(
         "/api/v1/auth/login",

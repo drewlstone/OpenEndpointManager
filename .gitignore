@@ -4,3 +4,8 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 pgdata/
+
+provisioning_root/firmware/**
+!provisioning_root/firmware/
+!provisioning_root/firmware/ccx/
+!provisioning_root/firmware/ccx/.gitkeep
