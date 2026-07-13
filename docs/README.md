@@ -96,6 +96,7 @@ Expected documents:
 
 ### Architecture
 
+- [Enterprise Architecture Blueprint](architecture/enterprise-architecture-blueprint.md) — authoritative target architecture and Enterprise Foundation (EF-1) roadmap
 - [System Architecture & Design Specification](architecture/system-architecture-design-specification.md)
 - Security Architecture: `docs/architecture/security-architecture.md` (planned)
 - Vendor Adapter Architecture: `docs/architecture/vendor-adapter-architecture.md` (planned)
