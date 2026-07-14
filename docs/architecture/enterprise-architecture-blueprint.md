@@ -579,6 +579,36 @@ EF-1 is complete only when the following are demonstrated:
 19. No known cross-tenant access paths.
 20. Explicit unsupported claims and deferred features.
 
+## Approved Enterprise UX roadmap requirements
+
+The following Enterprise UX items are approved roadmap requirements. They describe intended future product behavior and are not implemented capabilities. Their approval does not change the EF-1 exit criteria or authorize assumptions that the current UI, APIs, data model, provisioning behavior, or firmware behavior already support them.
+
+### EP-UX-01 — Persistent Pending Approval Notification
+
+- Display an amber sidebar badge containing the pending approval count.
+- Keep the notification visible on every page when the count is greater than zero.
+- Auto-refresh the count.
+- Hide the notification when the count is zero.
+- Link the notification to Pending Approval.
+
+### EP-UX-02 — Enterprise Device Removal Workflow
+
+- Provide a Recycle Bin for real managed devices.
+- Allow devices in the Recycle Bin to be restored.
+- Restrict permanent purge to privileged users.
+- Preserve an immutable audit record of device removal and purge actions.
+- Provide an immediate cleanup path for seed, simulator, demo, and load-test devices.
+- Support bulk purge scoped by test tenant or load-test run.
+- Introduce `device_origin` metadata in a future data-model change to distinguish device provenance.
+
+### EP-UX-03 — Configurable Fleet Table
+
+- Allow users to reorder, show or hide, and resize columns.
+- Save layouts per user.
+- Support named views and a default view.
+- Make Asset Tag available as a column.
+- Keep RBAC authoritative: hidden columns are presentation preferences, not security controls.
+
 ## 24. Recommended implementation sequence
 
 ### EF-1A — Contracts and safety rails

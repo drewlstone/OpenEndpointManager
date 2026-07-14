@@ -93,10 +93,11 @@ Expected documents:
 ### Project and Charter
 
 - Project Charter: `docs/charter/project-charter.md` (planned)
+- [Product Roadmap](../ROADMAP.md) — includes approved future requirements; roadmap entries are not implemented capabilities unless separately documented as delivered
 
 ### Architecture
 
-- [Enterprise Architecture Blueprint](architecture/enterprise-architecture-blueprint.md) — authoritative target architecture and Enterprise Foundation (EF-1) roadmap
+- [Enterprise Architecture Blueprint](architecture/enterprise-architecture-blueprint.md) — authoritative target architecture, Enterprise Foundation (EF-1) roadmap, and approved Enterprise UX roadmap requirements
 - [System Architecture & Design Specification](architecture/system-architecture-design-specification.md)
 - Security Architecture: `docs/architecture/security-architecture.md` (planned)
 - Vendor Adapter Architecture: `docs/architecture/vendor-adapter-architecture.md` (planned)

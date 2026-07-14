@@ -5,6 +5,10 @@ CCX (and other Poly models) at up to 100,000 endpoints. This roadmap captures
 what's deliberately deferred and candidate directions beyond 0.1. It is
 indicative, not a commitment.
 
+Items explicitly labeled as approved requirements have been accepted into the
+product roadmap, but remain future work until implementation and delivery are
+separately documented. They must not be represented as current capabilities.
+
 ## Known limitations in 0.1
 
 These are documented gaps, not bugs:
@@ -51,6 +55,41 @@ These are documented gaps, not bugs:
 - TOTP MFA enrollment and enforcement.
 - API key scoping UI and rotation reminders.
 - Optional mTLS for the provisioning plane.
+
+## Approved Enterprise UX requirements
+
+The following requirements are approved roadmap items, not implemented
+capabilities.
+
+### EP-UX-01 — Persistent Pending Approval Notification
+
+- Sidebar badge with the pending approval count.
+- Visible on every page when the count is greater than zero.
+- Auto-refresh.
+- Amber styling.
+- Hidden when the count is zero.
+- Links to Pending Approval.
+
+### EP-UX-02 — Enterprise Device Removal Workflow
+
+- Recycle Bin for real managed devices.
+- Restore from the Recycle Bin.
+- Privileged permanent purge.
+- Immutable audit record of device removal and purge actions.
+- Immediate cleanup path for seed, simulator, demo, and load-test devices.
+- Bulk purge by test tenant or load-test run.
+- Future `device_origin` metadata to distinguish device provenance.
+
+### EP-UX-03 — Configurable Fleet Table
+
+- Reorder columns.
+- Show or hide columns.
+- Resize columns.
+- Per-user saved layouts.
+- Named views.
+- Default view.
+- Asset Tag as an available column.
+- RBAC remains authoritative; hidden columns are not security controls.
 
 ## How priorities are set
 
